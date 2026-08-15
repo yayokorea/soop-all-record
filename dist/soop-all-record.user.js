@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SOOP(숲) 라이브 무손실 원본 녹화기
 // @namespace    https://github.com/yayokorea/soop-all-record
-// @version      4.1.1
+// @version      4.1.2
 // @author       Yayo
 // @description  SOOP 라이브 원본 스트림을 디스크에 무손실로 저장합니다.
 // @license      MIT
@@ -31,7 +31,7 @@
     return activeCount > 0 || bufferCount > 0;
   };
   const S = {
-    version: "4.1.1",
+    version: "4.1.2",
     recording: false,
     starting: false,
     stopping: false,
@@ -1242,10 +1242,10 @@ ${merge.scriptName} 실행 시 MP4가 생성됩니다.`,
       button.className = "btn_soop_all_record";
       button.setAttribute("aria-label", "SOOP 원본 녹화");
       Object.assign(button.style, {
-        minWidth: "36px",
+        minWidth: "32px",
         height: "32px",
-        padding: "0 4px",
-        margin: "0 3px",
+        padding: "0",
+        margin: "0",
         border: "0",
         background: "transparent",
         cursor: "pointer",

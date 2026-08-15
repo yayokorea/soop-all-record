@@ -1,7 +1,7 @@
 {
   "name": "soop-all-record",
   "private": true,
-  "version": "4.1.1",
+  "version": "4.1.2",
   "description": "SOOP(숲) 라이브 무손실 원본 녹화기",
   "author": "Yayo",
   "license": "MIT",

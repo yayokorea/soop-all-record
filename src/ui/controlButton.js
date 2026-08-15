@@ -309,10 +309,10 @@ export function installControlButton() {
     button.className = 'btn_soop_all_record';
     button.setAttribute('aria-label', 'SOOP 원본 녹화');
     Object.assign(button.style, {
-      minWidth: '36px',
+      minWidth: '32px',
       height: '32px',
-      padding: '0 4px',
-      margin: '0 3px',
+      padding: '0',
+      margin: '0',
       border: '0',
       background: 'transparent',
       cursor: 'pointer',
