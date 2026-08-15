@@ -1,0 +1,26 @@
+{
+  "name": "soop-all-record",
+  "private": true,
+  "version": "4.0.0",
+  "description": "SOOP(숲) 라이브 무손실 원본 녹화기",
+  "author": "Yayo",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yayokorea/soop-all-record.git"
+  },
+  "bugs": {
+    "url": "https://github.com/yayokorea/soop-all-record/issues"
+  },
+  "homepage": "https://github.com/yayokorea/soop-all-record#readme",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "vite": "^6.0.0",
+    "vite-plugin-monkey": "^5.0.0"
+  }
+}
