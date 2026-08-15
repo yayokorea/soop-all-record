@@ -1019,7 +1019,15 @@ ${merge.scriptName}을 실행하면 최종 MP4가 생성됩니다.`,
     const debugUrl = new URL(location.href);
     debugUrl.searchParams.set(PARAM, id);
     debugUrl.hash = "";
-    page.open(debugUrl.href, `soop_all_record_debug_${id}`);
+    const width = Math.min(1150, Math.max(800, Math.floor(window.screen.availWidth * 0.75)));
+    const height = Math.min(850, Math.max(600, Math.floor(window.screen.availHeight * 0.8)));
+    const left = Math.max(0, Math.floor((window.screen.availWidth - width) / 2));
+    const top = Math.max(0, Math.floor((window.screen.availHeight - height) / 2));
+    const features = `width=${width},height=${height},left=${left},top=${top},popup=yes,resizable=yes,scrollbars=yes`;
+    const popup = page.open(debugUrl.href, `soop_all_record_debug_${id}`, features);
+    if (popup && popup.focus) {
+      popup.focus();
+    }
   }
   async function beginFromUi() {
     if (!S.canStart) {
