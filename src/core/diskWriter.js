@@ -38,7 +38,7 @@ export const streamerName = () => {
 
 export const broadcastName = () => {
   const streamer = streamerName();
-  return streamer || 'SOOP';
+  return streamer ? `[${streamer}]` : '[SOOP]';
 };
 export const activeRecords = () => {
   const active = [...S.activeByKind.values()].filter(r => r.init);
