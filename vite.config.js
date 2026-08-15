@@ -25,7 +25,7 @@ export default defineConfig({
         noframes: true,
       },
       build: {
-        fileName: 'soop-mse-capture.user.js',
+        fileName: 'soop-all-record.user.js',
       },
     }),
   ],

@@ -151,8 +151,8 @@ export function dashboard(channelId) {
     .json-box { width: 100%; height: 220px; background: var(--bg); color: #334155; border: 1px solid var(--border); border-radius: 10px; padding: 14px; font-family: "JetBrains Mono", Consolas, monospace; font-size: 12px; line-height: 1.5; resize: vertical; }
     .empty-msg { padding: 24px; text-align: center; color: var(--text-muted); font-size: 13px; }
     .pulse-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--primary); box-shadow: 0 0 8px var(--primary); }
-    .pulse-dot.recording { background: var(--danger); box-shadow: 0 0 8px var(--danger); animation: soopMsePulse 1.2s infinite; }
-    @keyframes soopMsePulse { 0% { transform: scale(0.9); opacity: 0.8; } 50% { transform: scale(1.2); opacity: 1; } 100% { transform: scale(0.9); opacity: 0.8; } }
+    .pulse-dot.recording { background: var(--danger); box-shadow: 0 0 8px var(--danger); animation: soopAllRecordPulse 1.2s infinite; }
+    @keyframes soopAllRecordPulse { 0% { transform: scale(0.9); opacity: 0.8; } 50% { transform: scale(1.2); opacity: 1; } 100% { transform: scale(0.9); opacity: 0.8; } }
   </style>
 </head>
 <body>
@@ -426,7 +426,7 @@ export function dashboard(channelId) {
       }
       const directoryHandle = await page.showDirectoryPicker({
         mode: 'readwrite',
-        id: 'soop-mse-capture'
+        id: 'soop-all-record'
       });
       cmd('start', { directoryHandle });
     } catch (e) {

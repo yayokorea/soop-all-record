@@ -34,7 +34,7 @@ if (debugId) {
     }
   });
 
-  page.__SOOP_MSE_CAPTURE__ = { state: S, snapshot: snap, start, stop };
+  page.__SOOP_ALL_RECORD__ = { state: S, snapshot: snap, start, stop };
   log('info', 'installed', '후킹 완료: init만 RAM 보관, 미디어는 디스크 직결', { limit: 'none', channelId: id });
 
   // 플레이어 버튼 및 팝오버 등록

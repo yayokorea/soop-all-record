@@ -3,7 +3,7 @@
  */
 
 export const page = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
-export const PARAM = '__soop_mse_debug';
+export const PARAM = '__soop_all_record_debug';
 export const debugId = new URLSearchParams(location.search).get(PARAM);
 
 export const id = `soop-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -70,7 +70,7 @@ export function log(level, type, message, data = null) {
     S.logs.shift();
   }
   bus.postMessage({ type: 'log', entry });
-  console[level === 'error' ? 'error' : level === 'warn' ? 'warn' : 'info']('[SOOP MSE]', message, data);
+  console[level === 'error' ? 'error' : level === 'warn' ? 'warn' : 'info']('[SOOP ALL RECORD]', message, data);
 }
 
 export function snap() {

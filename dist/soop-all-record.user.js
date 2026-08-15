@@ -20,7 +20,7 @@
   'use strict';
 
   const page = typeof unsafeWindow !== "undefined" ? unsafeWindow : window;
-  const PARAM = "__soop_mse_debug";
+  const PARAM = "__soop_all_record_debug";
   const debugId = new URLSearchParams(location.search).get(PARAM);
   const id = `soop-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const bus = new page.BroadcastChannel(id);
@@ -83,7 +83,7 @@
       S.logs.shift();
     }
     bus.postMessage({ type: "log", entry });
-    console[level === "error" ? "error" : level === "warn" ? "warn" : "info"]("[SOOP MSE]", message, data);
+    console[level === "error" ? "error" : level === "warn" ? "warn" : "info"]("[SOOP ALL RECORD]", message, data);
   }
   function snap() {
     return {
@@ -385,10 +385,10 @@
     return `파일을 처리하지 못했습니다: ${text}`;
   }
   function toast(message, level = "ok", duration = 4500) {
-    let el = document.getElementById("soopMseToast");
+    let el = document.getElementById("soopAllRecordToast");
     if (!el) {
       el = document.createElement("div");
-      el.id = "soopMseToast";
+      el.id = "soopAllRecordToast";
       Object.assign(el.style, {
         position: "fixed",
         right: "24px",
@@ -918,7 +918,7 @@ ${merge.scriptName}을 실행하면 최종 MP4가 생성됩니다.`,
   }
   function openDb() {
     return new Promise((resolve, reject) => {
-      const req = indexedDB.open("soop-mse-capture", 1);
+      const req = indexedDB.open("soop-all-record", 1);
       req.onupgradeneeded = () => req.result.createObjectStore("settings");
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => reject(req.error);
@@ -960,7 +960,7 @@ ${merge.scriptName}을 실행하면 최종 MP4가 생성됩니다.`,
         return handle;
       }
     }
-    handle = await page.showDirectoryPicker({ mode: "readwrite", id: "soop-mse-capture" });
+    handle = await page.showDirectoryPicker({ mode: "readwrite", id: "soop-all-record" });
     try {
       await rememberDirectory(handle);
     } catch (error) {
@@ -979,7 +979,7 @@ ${merge.scriptName}을 실행하면 최종 MP4가 생성됩니다.`,
     const debugUrl = new URL(location.href);
     debugUrl.searchParams.set(PARAM, id);
     debugUrl.hash = "";
-    page.open(debugUrl.href, `soop_mse_debug_${id}`);
+    page.open(debugUrl.href, `soop_all_record_debug_${id}`);
   }
   async function beginFromUi() {
     if (!S.canStart) {
@@ -1000,7 +1000,7 @@ ${merge.scriptName}을 실행하면 최종 MP4가 생성됩니다.`,
     var _a;
     if (!popover) {
       popover = document.createElement("div");
-      popover.id = "soopMsePopover";
+      popover.id = "soopAllRecordPopover";
       Object.assign(popover.style, {
         position: "fixed",
         zIndex: "2147483646",
@@ -1042,11 +1042,11 @@ ${merge.scriptName}을 실행하면 최종 MP4가 생성됩니다.`,
     <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px;margin-bottom:12px;font-size:12px;color:#334155">${summary}</div>
     <div style="color:#64748b;font-size:12px;margin-bottom:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">저장 폴더: <b>${((_a = S.directory) == null ? void 0 : _a.name) || "처음 시작할 때 선택"}</b></div>
     <div style="display:flex;gap:6px;flex-wrap:wrap">
-      <button id="msePrimary" style="flex:1;padding:8px 12px;border:0;border-radius:8px;background:${S.recording ? "#ef4444" : "#10b981"};color:#fff;font-weight:600;cursor:pointer;font-size:13px;box-shadow:0 2px 6px rgba(0,0,0,0.08)" ${!S.recording && !S.canStart || S.starting || S.stopping ? "disabled" : ""}>${S.recording ? "녹화 중지" : "새 녹화 시작"}</button>
-      <button id="mseFolder" style="padding:8px 10px;border:1px solid #cbd5e1;border-radius:8px;background:#ffffff;color:#334155;font-weight:500;cursor:pointer;font-size:12px" ${S.recording ? "disabled" : ""}>폴더 변경</button>
-      <button id="mseDebug" style="width:100%;margin-top:4px;padding:7px 10px;border:1px solid #e2e8f0;border-radius:8px;background:#f8fafc;color:#475569;font-weight:500;cursor:pointer;font-size:12px">상세 모니터링 대시보드 열기</button>
+      <button id="sarPrimary" style="flex:1;padding:8px 12px;border:0;border-radius:8px;background:${S.recording ? "#ef4444" : "#10b981"};color:#fff;font-weight:600;cursor:pointer;font-size:13px;box-shadow:0 2px 6px rgba(0,0,0,0.08)" ${!S.recording && !S.canStart || S.starting || S.stopping ? "disabled" : ""}>${S.recording ? "녹화 중지" : "새 녹화 시작"}</button>
+      <button id="sarFolder" style="padding:8px 10px;border:1px solid #cbd5e1;border-radius:8px;background:#ffffff;color:#334155;font-weight:500;cursor:pointer;font-size:12px" ${S.recording ? "disabled" : ""}>폴더 변경</button>
+      <button id="sarDebug" style="width:100%;margin-top:4px;padding:7px 10px;border:1px solid #e2e8f0;border-radius:8px;background:#f8fafc;color:#475569;font-weight:500;cursor:pointer;font-size:12px">상세 모니터링 대시보드 열기</button>
     </div>`;
-    popover.querySelector("#msePrimary").onclick = async () => {
+    popover.querySelector("#sarPrimary").onclick = async () => {
       hidePopover();
       if (S.recording) {
         await stop();
@@ -1054,9 +1054,9 @@ ${merge.scriptName}을 실행하면 최종 MP4가 생성됩니다.`,
         await beginFromUi();
       }
     };
-    popover.querySelector("#mseFolder").onclick = async () => {
+    popover.querySelector("#sarFolder").onclick = async () => {
       try {
-        const handle = await page.showDirectoryPicker({ mode: "readwrite", id: "soop-mse-capture" });
+        const handle = await page.showDirectoryPicker({ mode: "readwrite", id: "soop-all-record" });
         await rememberDirectory(handle);
         S.directory = handle;
         toast(`저장 폴더: ${handle.name}`);
@@ -1067,7 +1067,7 @@ ${merge.scriptName}을 실행하면 최종 MP4가 생성됩니다.`,
         }
       }
     };
-    popover.querySelector("#mseDebug").onclick = () => openDebug();
+    popover.querySelector("#sarDebug").onclick = () => openDebug();
     popover.style.left = `${Math.max(8, Math.min(innerWidth - 320, rect.right - 310))}px`;
     popover.style.top = `${Math.max(8, rect.top - 230)}px`;
     popover.style.display = "block";
@@ -1078,12 +1078,12 @@ ${merge.scriptName}을 실행하면 최종 MP4가 생성됩니다.`,
     const mins = Math.floor(elapsed / 60);
     const secs = String(elapsed % 60).padStart(2, "0");
     if (S.stopping || S.starting) {
-      controlButton.innerHTML = `<span style="display:inline-block;width:16px;height:16px;border:2.5px solid #94a3b8;border-top-color:#10b981;border-radius:50%;animation:soopMseSpin .8s linear infinite;box-sizing:border-box;"></span>`;
+      controlButton.innerHTML = `<span style="display:inline-block;width:16px;height:16px;border:2.5px solid #94a3b8;border-top-color:#10b981;border-radius:50%;animation:soopAllRecordSpin .8s linear infinite;box-sizing:border-box;"></span>`;
       controlButton.title = S.starting ? "녹화 준비 중..." : "파일 저장 마무리 중...";
     } else if (S.recording) {
       controlButton.innerHTML = `
       <span style="display:inline-flex;align-items:center;gap:6px;padding:3px 8px;background:rgba(239,68,68,0.18);border:1px solid rgba(239,68,68,0.4);border-radius:20px;">
-        <span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#ef4444;box-shadow:0 0 10px #ef4444;animation:soopMsePulse 1.2s ease-in-out infinite;"></span>
+        <span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#ef4444;box-shadow:0 0 10px #ef4444;animation:soopAllRecordPulse 1.2s ease-in-out infinite;"></span>
         <span style="font-size:12px;font-weight:700;color:#ff5a67;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;line-height:1;">${mins}:${secs}</span>
       </span>`;
       controlButton.title = `SOOP 원본 녹화 중 · ${mb(S.bytes)} MiB · 좌클릭: 중지 · 우클릭: 상세 정보`;
@@ -1105,10 +1105,10 @@ ${merge.scriptName}을 실행하면 최종 MP4가 생성됩니다.`,
     setControlButtonUpdater(updateControlButton);
     const styleEl = document.createElement("style");
     styleEl.textContent = `
-    @keyframes soopMsePulse { 0% { transform: scale(0.92); opacity: 0.8; } 50% { transform: scale(1.18); opacity: 1; box-shadow: 0 0 12px #ef4444; } 100% { transform: scale(0.92); opacity: 0.8; } }
-    @keyframes soopMseSpin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-    .btn_soop_mse_capture:hover { filter: brightness(1.2); }
-    .btn_soop_mse_capture:active { transform: scale(0.94); }
+    @keyframes soopAllRecordPulse { 0% { transform: scale(0.92); opacity: 0.8; } 50% { transform: scale(1.18); opacity: 1; box-shadow: 0 0 12px #ef4444; } 100% { transform: scale(0.92); opacity: 0.8; } }
+    @keyframes soopAllRecordSpin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    .btn_soop_all_record:hover { filter: brightness(1.2); }
+    .btn_soop_all_record:active { transform: scale(0.94); }
   `;
     document.head.appendChild(styleEl);
     const attach = () => {
@@ -1117,7 +1117,7 @@ ${merge.scriptName}을 실행하면 최종 MP4가 생성됩니다.`,
       if (!right) return false;
       const button = document.createElement("button");
       button.type = "button";
-      button.className = "btn_soop_mse_capture";
+      button.className = "btn_soop_all_record";
       button.setAttribute("aria-label", "SOOP 원본 녹화");
       Object.assign(button.style, {
         minWidth: "36px",
@@ -1311,8 +1311,8 @@ ${merge.scriptName}을 실행하면 최종 MP4가 생성됩니다.`,
     .json-box { width: 100%; height: 220px; background: var(--bg); color: #334155; border: 1px solid var(--border); border-radius: 10px; padding: 14px; font-family: "JetBrains Mono", Consolas, monospace; font-size: 12px; line-height: 1.5; resize: vertical; }
     .empty-msg { padding: 24px; text-align: center; color: var(--text-muted); font-size: 13px; }
     .pulse-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--primary); box-shadow: 0 0 8px var(--primary); }
-    .pulse-dot.recording { background: var(--danger); box-shadow: 0 0 8px var(--danger); animation: soopMsePulse 1.2s infinite; }
-    @keyframes soopMsePulse { 0% { transform: scale(0.9); opacity: 0.8; } 50% { transform: scale(1.2); opacity: 1; } 100% { transform: scale(0.9); opacity: 0.8; } }
+    .pulse-dot.recording { background: var(--danger); box-shadow: 0 0 8px var(--danger); animation: soopAllRecordPulse 1.2s infinite; }
+    @keyframes soopAllRecordPulse { 0% { transform: scale(0.9); opacity: 0.8; } 50% { transform: scale(1.2); opacity: 1; } 100% { transform: scale(0.9); opacity: 0.8; } }
   </style>
 </head>
 <body>
@@ -1533,7 +1533,7 @@ ${merge.scriptName}을 실행하면 최종 MP4가 생성됩니다.`,
         }
         const directoryHandle = await page.showDirectoryPicker({
           mode: "readwrite",
-          id: "soop-mse-capture"
+          id: "soop-all-record"
         });
         cmd("start", { directoryHandle });
       } catch (e) {
@@ -1576,7 +1576,7 @@ ${merge.scriptName}을 실행하면 최종 MP4가 생성됩니다.`,
         stop();
       }
     });
-    page.__SOOP_MSE_CAPTURE__ = { state: S, snapshot: snap, start, stop };
+    page.__SOOP_ALL_RECORD__ = { state: S, snapshot: snap, start, stop };
     log("info", "installed", "후킹 완료: init만 RAM 보관, 미디어는 디스크 직결", { limit: "none", channelId: id });
     installControlButton();
     setInterval(() => {

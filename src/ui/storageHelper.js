@@ -6,7 +6,7 @@ import { page, log } from '../config/state.js';
 
 export function openDb() {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open('soop-mse-capture', 1);
+    const req = indexedDB.open('soop-all-record', 1);
     req.onupgradeneeded = () => req.result.createObjectStore('settings');
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
@@ -53,7 +53,7 @@ export async function chooseDirectory() {
     }
   }
 
-  handle = await page.showDirectoryPicker({ mode: 'readwrite', id: 'soop-mse-capture' });
+  handle = await page.showDirectoryPicker({ mode: 'readwrite', id: 'soop-all-record' });
   try {
     await rememberDirectory(handle);
   } catch (error) {

@@ -31,4 +31,4 @@ npm run dev
 npm run build
 ```
 
-빌드가 완료되면 `dist/soop-mse-capture.user.js` 파일이 생성됩니다.
+빌드가 완료되면 `dist/soop-all-record.user.js` 파일이 생성됩니다.

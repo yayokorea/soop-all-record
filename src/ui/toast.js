@@ -19,10 +19,10 @@ export function friendlyError(error) {
 }
 
 export function toast(message, level = 'ok', duration = 4500) {
-  let el = document.getElementById('soopMseToast');
+  let el = document.getElementById('soopAllRecordToast');
   if (!el) {
     el = document.createElement('div');
-    el.id = 'soopMseToast';
+    el.id = 'soopAllRecordToast';
     Object.assign(el.style, {
       position: 'fixed',
       right: '24px',

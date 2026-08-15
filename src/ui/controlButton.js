@@ -21,7 +21,7 @@ export function openDebug() {
   const debugUrl = new URL(location.href);
   debugUrl.searchParams.set(PARAM, id);
   debugUrl.hash = '';
-  page.open(debugUrl.href, `soop_mse_debug_${id}`);
+  page.open(debugUrl.href, `soop_all_record_debug_${id}`);
 }
 
 export async function beginFromUi() {
@@ -43,7 +43,7 @@ export async function beginFromUi() {
 export function showPopover() {
   if (!popover) {
     popover = document.createElement('div');
-    popover.id = 'soopMsePopover';
+    popover.id = 'soopAllRecordPopover';
     Object.assign(popover.style, {
       position: 'fixed',
       zIndex: '2147483646',
@@ -107,12 +107,12 @@ export function showPopover() {
     <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px;margin-bottom:12px;font-size:12px;color:#334155">${summary}</div>
     <div style="color:#64748b;font-size:12px;margin-bottom:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">저장 폴더: <b>${S.directory?.name || '처음 시작할 때 선택'}</b></div>
     <div style="display:flex;gap:6px;flex-wrap:wrap">
-      <button id="msePrimary" style="flex:1;padding:8px 12px;border:0;border-radius:8px;background:${S.recording ? '#ef4444' : '#10b981'};color:#fff;font-weight:600;cursor:pointer;font-size:13px;box-shadow:0 2px 6px rgba(0,0,0,0.08)" ${(!S.recording && !S.canStart) || S.starting || S.stopping ? 'disabled' : ''}>${S.recording ? '녹화 중지' : '새 녹화 시작'}</button>
-      <button id="mseFolder" style="padding:8px 10px;border:1px solid #cbd5e1;border-radius:8px;background:#ffffff;color:#334155;font-weight:500;cursor:pointer;font-size:12px" ${S.recording ? 'disabled' : ''}>폴더 변경</button>
-      <button id="mseDebug" style="width:100%;margin-top:4px;padding:7px 10px;border:1px solid #e2e8f0;border-radius:8px;background:#f8fafc;color:#475569;font-weight:500;cursor:pointer;font-size:12px">상세 모니터링 대시보드 열기</button>
+      <button id="sarPrimary" style="flex:1;padding:8px 12px;border:0;border-radius:8px;background:${S.recording ? '#ef4444' : '#10b981'};color:#fff;font-weight:600;cursor:pointer;font-size:13px;box-shadow:0 2px 6px rgba(0,0,0,0.08)" ${(!S.recording && !S.canStart) || S.starting || S.stopping ? 'disabled' : ''}>${S.recording ? '녹화 중지' : '새 녹화 시작'}</button>
+      <button id="sarFolder" style="padding:8px 10px;border:1px solid #cbd5e1;border-radius:8px;background:#ffffff;color:#334155;font-weight:500;cursor:pointer;font-size:12px" ${S.recording ? 'disabled' : ''}>폴더 변경</button>
+      <button id="sarDebug" style="width:100%;margin-top:4px;padding:7px 10px;border:1px solid #e2e8f0;border-radius:8px;background:#f8fafc;color:#475569;font-weight:500;cursor:pointer;font-size:12px">상세 모니터링 대시보드 열기</button>
     </div>`;
 
-  popover.querySelector('#msePrimary').onclick = async () => {
+  popover.querySelector('#sarPrimary').onclick = async () => {
     hidePopover();
     if (S.recording) {
       await stop();
@@ -121,9 +121,9 @@ export function showPopover() {
     }
   };
 
-  popover.querySelector('#mseFolder').onclick = async () => {
+  popover.querySelector('#sarFolder').onclick = async () => {
     try {
-      const handle = await page.showDirectoryPicker({ mode: 'readwrite', id: 'soop-mse-capture' });
+      const handle = await page.showDirectoryPicker({ mode: 'readwrite', id: 'soop-all-record' });
       await rememberDirectory(handle);
       S.directory = handle;
       toast(`저장 폴더: ${handle.name}`);
@@ -135,7 +135,7 @@ export function showPopover() {
     }
   };
 
-  popover.querySelector('#mseDebug').onclick = () => openDebug();
+  popover.querySelector('#sarDebug').onclick = () => openDebug();
   popover.style.left = `${Math.max(8, Math.min(innerWidth - 320, rect.right - 310))}px`;
   popover.style.top = `${Math.max(8, rect.top - 230)}px`;
   popover.style.display = 'block';
@@ -149,12 +149,12 @@ export function updateControlButton() {
   const secs = String(elapsed % 60).padStart(2, '0');
 
   if (S.stopping || S.starting) {
-    controlButton.innerHTML = `<span style="display:inline-block;width:16px;height:16px;border:2.5px solid #94a3b8;border-top-color:#10b981;border-radius:50%;animation:soopMseSpin .8s linear infinite;box-sizing:border-box;"></span>`;
+    controlButton.innerHTML = `<span style="display:inline-block;width:16px;height:16px;border:2.5px solid #94a3b8;border-top-color:#10b981;border-radius:50%;animation:soopAllRecordSpin .8s linear infinite;box-sizing:border-box;"></span>`;
     controlButton.title = S.starting ? '녹화 준비 중...' : '파일 저장 마무리 중...';
   } else if (S.recording) {
     controlButton.innerHTML = `
       <span style="display:inline-flex;align-items:center;gap:6px;padding:3px 8px;background:rgba(239,68,68,0.18);border:1px solid rgba(239,68,68,0.4);border-radius:20px;">
-        <span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#ef4444;box-shadow:0 0 10px #ef4444;animation:soopMsePulse 1.2s ease-in-out infinite;"></span>
+        <span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#ef4444;box-shadow:0 0 10px #ef4444;animation:soopAllRecordPulse 1.2s ease-in-out infinite;"></span>
         <span style="font-size:12px;font-weight:700;color:#ff5a67;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;line-height:1;">${mins}:${secs}</span>
       </span>`;
     controlButton.title = `SOOP 원본 녹화 중 · ${mb(S.bytes)} MiB · 좌클릭: 중지 · 우클릭: 상세 정보`;
@@ -178,10 +178,10 @@ export function installControlButton() {
 
   const styleEl = document.createElement('style');
   styleEl.textContent = `
-    @keyframes soopMsePulse { 0% { transform: scale(0.92); opacity: 0.8; } 50% { transform: scale(1.18); opacity: 1; box-shadow: 0 0 12px #ef4444; } 100% { transform: scale(0.92); opacity: 0.8; } }
-    @keyframes soopMseSpin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-    .btn_soop_mse_capture:hover { filter: brightness(1.2); }
-    .btn_soop_mse_capture:active { transform: scale(0.94); }
+    @keyframes soopAllRecordPulse { 0% { transform: scale(0.92); opacity: 0.8; } 50% { transform: scale(1.18); opacity: 1; box-shadow: 0 0 12px #ef4444; } 100% { transform: scale(0.92); opacity: 0.8; } }
+    @keyframes soopAllRecordSpin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    .btn_soop_all_record:hover { filter: brightness(1.2); }
+    .btn_soop_all_record:active { transform: scale(0.94); }
   `;
   document.head.appendChild(styleEl);
 
@@ -192,7 +192,7 @@ export function installControlButton() {
 
     const button = document.createElement('button');
     button.type = 'button';
-    button.className = 'btn_soop_mse_capture';
+    button.className = 'btn_soop_all_record';
     button.setAttribute('aria-label', 'SOOP 원본 녹화');
     Object.assign(button.style, {
       minWidth: '36px',
