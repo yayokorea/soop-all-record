@@ -9,7 +9,7 @@
 // @name:vi            Trình ghi livestream SOOP nguyên bản không mất chất lượng
 // @name:id            Perekam Live SOOP Lossless dari Stream Asli
 // @namespace          https://github.com/yayokorea/soop-all-record
-// @version            4.1.6
+// @version            4.1.7
 // @author             Yayo
 // @description        SOOP 라이브 원본 스트림을 디스크에 무손실로 저장합니다.
 // @description:ko     SOOP 라이브 원본 스트림을 디스크에 무손실로 저장합니다.
@@ -47,7 +47,7 @@
     return activeCount > 0 || bufferCount > 0;
   };
   const S = {
-    version: "4.1.6",
+    version: "4.1.7",
     recording: false,
     starting: false,
     stopping: false,
