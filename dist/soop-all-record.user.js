@@ -1,5 +1,12 @@
 // ==UserScript==
 // @name         SOOP(숲) 라이브 무손실 원본 녹화기
+// @name:en      SOOP Live Lossless Original Stream Recorder
+// @name:ja      SOOP（スプ）ライブ無劣化オリジナル録画ツール
+// @name:zh-TW   SOOP 直播無損原始串流錄製器
+// @name:zh-CN   SOOP 直播无损原始流录制器
+// @name:th      เครื่องบันทึกไลฟ์ SOOP แบบต้นฉบับไม่สูญเสียคุณภาพ
+// @name:vi      Trình ghi livestream SOOP nguyên bản không mất chất lượng
+// @name:id      Perekam Live SOOP Lossless dari Stream Asli
 // @namespace    https://github.com/yayokorea/soop-all-record
 // @version      4.1.2
 // @author       Yayo
