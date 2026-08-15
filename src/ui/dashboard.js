@@ -18,7 +18,7 @@ export function dashboard(channelId) {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>SOOP 원본 녹화 · 상세 모니터링</title>
+  <title>SOOP 원본 녹화 대시보드</title>
   <style>
     :root {
       --bg-base: #121212;
@@ -401,7 +401,7 @@ export function dashboard(channelId) {
       </button>
       <button class="btn btn-green" id="startBtn" disabled>
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/></svg>
-        녹화 시작 · 폴더 선택
+        녹화 시작
       </button>
       <button class="btn btn-red" id="stopBtn" disabled>
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
@@ -437,8 +437,8 @@ export function dashboard(channelId) {
     <!-- 미디어 조각 및 파이프라인 지표 (4-Column) -->
     <section class="panel">
       <div class="panel-header">
-        <h2 class="panel-title">미디어 청크(Chunk) 파이프라인 지표</h2>
-        <span class="panel-subinfo">Direct-to-Disk 무손실 무재인코딩</span>
+        <h2 class="panel-title">청크 파이프라인 지표</h2>
+        <span class="panel-subinfo">실시간 무손실 저장</span>
       </div>
       <div class="sub-grid" id="pipelineGrid"></div>
       <div id="missingReport" style="margin-top:14px;padding:12px 18px;background:var(--bg-card);border:1px solid var(--border-light);border-radius:10px;font-size:13px;"></div>
@@ -447,7 +447,7 @@ export function dashboard(channelId) {
     <!-- 녹화 세그먼트 (Part 목록) - Full Width -->
     <section class="panel">
       <div class="panel-header">
-        <h2 class="panel-title">녹화 파일 세그먼트 (Part 목록)</h2>
+        <h2 class="panel-title">세그먼트 목록 (Part)</h2>
       </div>
       <div class="table-box">
         <table>
@@ -469,7 +469,7 @@ export function dashboard(channelId) {
     <!-- 활성 미디어 버퍼 (MSE) - Full Width -->
     <section class="panel">
       <div class="panel-header">
-        <h2 class="panel-title">활성 미디어 소스 버퍼 (MSE 트랙)</h2>
+        <h2 class="panel-title">미디어 버퍼 (트랙)</h2>
       </div>
       <div class="table-box">
         <table>
@@ -491,7 +491,7 @@ export function dashboard(channelId) {
     <!-- 타임라인 무결성 & 최종 파일 - Full Width -->
     <section class="panel">
       <div class="panel-header">
-        <h2 class="panel-title">타임라인 무결성 및 완료 파일</h2>
+        <h2 class="panel-title">타임라인 상태 및 결과</h2>
       </div>
       <div style="display:flex;flex-direction:column;gap:12px">
         <div id="anomaliesBox"></div>
@@ -502,8 +502,7 @@ export function dashboard(channelId) {
     <!-- 실시간 이벤트 콘솔 - Full Width -->
     <section class="panel">
       <div class="panel-header">
-        <h2 class="panel-title">실시간 이벤트 콘솔</h2>
-        <span class="panel-subinfo">실시간 파이프라인 이벤트</span>
+        <h2 class="panel-title">이벤트 로그</h2>
       </div>
       <div id="logTerminal" class="log-box"></div>
     </section>
@@ -511,7 +510,7 @@ export function dashboard(channelId) {
     <!-- 진단 JSON 데이터 - Full Width -->
     <section class="panel">
       <div class="panel-header">
-        <h2 class="panel-title">진단 데이터 스냅샷 (JSON)</h2>
+        <h2 class="panel-title">진단 데이터 (JSON)</h2>
       </div>
       <textarea id="jsonBox" class="json-textarea" readonly></textarea>
     </section>
@@ -551,12 +550,12 @@ export function dashboard(channelId) {
       : c.starting
         ? '파일 생성 중'
         : c.stopping
-          ? '파일 마무리 중'
+          ? '저장 완료 중'
           : c.recording
             ? '녹화 진행 중'
             : isReady
-              ? (c.completedAt ? '저장 완료 (새 녹화 대기)' : '녹화 준비 완료')
-              : '스트림 감지 대기';
+              ? (c.completedAt ? '저장 완료 (대기 중)' : '녹화 준비 완료')
+              : '스트림 대기 중';
 
     const stateColorClass = c.error
       ? 'val-red'
@@ -569,7 +568,7 @@ export function dashboard(channelId) {
     const startBtn = $('#startBtn');
     if (startBtn) {
       startBtn.disabled = !isReady;
-      startBtn.textContent = isReady ? '녹화 시작 · 폴더 선택' : (c.recording ? '녹화 진행 중' : '스트림 대기 중');
+      startBtn.textContent = isReady ? '녹화 시작' : (c.recording ? '녹화 중' : '대기 중');
     }
 
     const stopBtn = $('#stopBtn');
@@ -594,10 +593,10 @@ export function dashboard(channelId) {
     const kpiStatusDesc = $('#kpiStatusDesc');
     if (kpiStatusDesc) {
       kpiStatusDesc.textContent = c.recording
-        ? `Part ${c.partCount} 녹화 진행 중 · 오류 없음`
+        ? `Part ${c.partCount} 녹화 중`
         : isReady
-          ? (c.completedAt ? `이전 녹화 저장 완료 (${c.sizeMiB} MiB) · 다음 녹화 가능` : '스트림 준비 완료 · 언제든 녹화 시작 가능')
-          : 'SOOP 플레이어 스트림 연결 대기 중';
+          ? (c.completedAt ? `이전 녹화 완료 (${c.sizeMiB} MiB)` : '녹화 준비 완료')
+          : '스트림 연결 대기 중';
     }
 
     const kpiTime = $('#kpiTime');
@@ -715,7 +714,7 @@ export function dashboard(channelId) {
           </div>`
             )
             .join('')
-        : '<div style="padding:14px 18px;background:var(--bg-card);border:1px solid var(--border);border-radius:10px;color:var(--accent-green);font-size:13px;font-weight:700">✓ 타임라인 불연속(이상 감지) 없음 · 원본 스트림 안정 수신 중</div>';
+        : '<div style="padding:14px 18px;background:var(--bg-card);border:1px solid var(--border);border-radius:10px;color:var(--accent-green);font-size:13px;font-weight:700">✓ 타임라인 이상 없음</div>';
     }
 
     const outputBox = $('#outputBox');
@@ -723,11 +722,11 @@ export function dashboard(channelId) {
       outputBox.innerHTML = c.mergeScript
         ? `
         <div style="padding:14px 18px;background:var(--bg-card);border:1px solid var(--border);border-radius:10px;font-size:13px">
-          <div style="margin-bottom:6px;font-weight:700;color:var(--accent-green)">무손실 파일 저장 완료</div>
+          <div style="margin-bottom:6px;font-weight:700;color:var(--accent-green)">저장 완료</div>
           <div style="margin-bottom:4px"><b>병합 스크립트:</b> <code>${esc(c.mergeScript)}</code></div>
-          <div><b>최종 완성 파일:</b> <code>${esc(c.mergedFilename)}</code></div>
+          <div><b>완성 파일:</b> <code>${esc(c.mergedFilename)}</code></div>
         </div>`
-        : `<div style="color:var(--text-muted);font-size:13px;padding:14px 18px;background:var(--bg-card);border:1px solid var(--border);border-radius:10px">녹화 중지 시 무손실 병합 스크립트(.bat)와 메타데이터 JSON이 디스크에 자동 생성됩니다.</div>`;
+        : `<div style="color:var(--text-muted);font-size:13px;padding:14px 18px;background:var(--bg-card);border:1px solid var(--border);border-radius:10px">녹화 중지 시 병합 스크립트(.bat)가 생성됩니다.</div>`;
     }
 
     D.logs = s.logs.slice(-100);

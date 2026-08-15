@@ -48,7 +48,7 @@ if (debugId) {
       S.broadcastId = current;
       log('warn', 'broadcast-changed', '방송 ID 변경 감지', { previous, current });
       if (S.recording) {
-        toast('다른 방송으로 이동하여 기존 녹화를 마무리합니다.', 'warn', 6000);
+        toast('방송 이동 감지 · 녹화를 종료합니다.', 'warn', 5000);
         stop();
       }
     }
@@ -58,7 +58,7 @@ if (debugId) {
   page.addEventListener('beforeunload', event => {
     if (S.recording || S.stopping || S.rotating) {
       event.preventDefault();
-      event.returnValue = '녹화 파일을 기록 중입니다.';
+      event.returnValue = '녹화 중입니다.';
     }
   });
 

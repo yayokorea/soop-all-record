@@ -6,16 +6,16 @@ let toastTimer = 0;
 
 export function friendlyError(error) {
   const name = error?.name || '';
-  const text = String(error?.message || error || '알 수 없는 오류');
+  const text = String(error?.message || error || '오류');
 
-  if (name === 'AbortError') return '작업을 취소했습니다.';
+  if (name === 'AbortError') return '취소되었습니다.';
   if (name === 'NotAllowedError' || name === 'SecurityError') {
-    return '저장 폴더 권한이 없습니다. 녹화 버튼을 다시 눌러 허용하세요.';
+    return '저장 폴더 권한이 없습니다.';
   }
   if (name === 'QuotaExceededError') {
-    return '저장 공간이 부족합니다. 다른 드라이브의 폴더를 선택하세요.';
+    return '저장 공간이 부족합니다.';
   }
-  return `파일을 처리하지 못했습니다: ${text}`;
+  return `저장 오류: ${text}`;
 }
 
 export function toast(message, level = 'ok', duration = 4500) {

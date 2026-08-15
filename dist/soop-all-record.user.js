@@ -3,7 +3,7 @@
 // @namespace    https://github.com/yayokorea/soop-all-record
 // @version      4.1.1
 // @author       Yayo
-// @description  SOOP 라이브 원본 스트림을 File System Access API로 브라우저 메모리 누수 없이 실시간 디스크에 무손실로 저장하고 병합 배치를 생성합니다.
+// @description  SOOP 라이브 원본 스트림을 디스크에 무손실로 저장합니다.
 // @license      MIT
 // @icon         https://res.sooplive.com/afreeca.ico
 // @homepage     https://github.com/yayokorea/soop-all-record#readme
@@ -385,15 +385,15 @@
   let toastTimer = 0;
   function friendlyError(error) {
     const name = (error == null ? void 0 : error.name) || "";
-    const text = String((error == null ? void 0 : error.message) || error || "알 수 없는 오류");
-    if (name === "AbortError") return "작업을 취소했습니다.";
+    const text = String((error == null ? void 0 : error.message) || error || "오류");
+    if (name === "AbortError") return "취소되었습니다.";
     if (name === "NotAllowedError" || name === "SecurityError") {
-      return "저장 폴더 권한이 없습니다. 녹화 버튼을 다시 눌러 허용하세요.";
+      return "저장 폴더 권한이 없습니다.";
     }
     if (name === "QuotaExceededError") {
-      return "저장 공간이 부족합니다. 다른 드라이브의 폴더를 선택하세요.";
+      return "저장 공간이 부족합니다.";
     }
-    return `파일을 처리하지 못했습니다: ${text}`;
+    return `저장 오류: ${text}`;
   }
   function toast(message, level = "ok", duration = 4500) {
     let el = document.getElementById("soopAllRecordToast");
@@ -502,7 +502,7 @@
     S.rotating = true;
     S.rotationReason = reason;
     send();
-    toast(`${reason === "quality-change" ? "화질 변경" : "재연결"} 감지 · 새 Part 준비 중`, "warn", 3500);
+    toast(`${reason === "quality-change" ? "화질 변경" : "재연결"} 감지 · Part 전환 중`, "warn", 3e3);
     try {
       await new Promise((resolve) => setTimeout(resolve, 650));
       if (reason === "reconnect") {
@@ -543,7 +543,7 @@
         queued: queued.length,
         discardedOldSource: discarded
       });
-      toast(`Part ${part.number} · ${part.label}로 녹화를 계속합니다.`);
+      toast(`Part ${part.number} (${part.label}) 녹화 시작`);
     } catch (error) {
       S.error = String((error == null ? void 0 : error.stack) || error);
       S.recording = false;
@@ -665,10 +665,10 @@
     }
     queue(target, data, part);
     if (S.pendingBytes > 134217728 && S.pendingBytes - data.byteLength <= 134217728) {
-      toast(`디스크 쓰기가 밀리고 있습니다 · ${mb(S.pendingBytes)} MiB 대기`, "warn", 6e3);
+      toast(`디스크 쓰기 지연: ${mb(S.pendingBytes)} MiB 대기`, "warn", 5e3);
     }
     if (S.pendingBytes > 536870912) {
-      toast("디스크 쓰기 지연이 512 MiB를 넘어 안전을 위해 녹화를 중지합니다.", "error", 9e3);
+      toast("쓰기 지연 초과로 녹화를 중지합니다.", "error", 8e3);
       stop();
     }
     if (S.chunks <= 10 || S.chunks % 20 === 0) {
@@ -774,10 +774,10 @@
       log("info", "stopped", "파일 쓰기 완료 및 무손실 병합 스크립트 생성", { files, merge });
       const missing = [...S.fragmentStats.missing].filter(([, m]) => m.confirmed).length;
       toast(
-        `✓ 녹화 저장 완료 · ${mb(S.bytes)} MiB · Part ${S.parts.length}개 · 누락 ${missing}
-${merge.scriptName}을 실행하면 최종 MP4가 생성됩니다.`,
+        `녹화 완료 (${mb(S.bytes)} MiB, Part ${S.parts.length}개)
+${merge.scriptName} 실행 시 MP4가 생성됩니다.`,
         "ok",
-        9e3
+        8e3
       );
     } catch (e) {
       S.error = String((e == null ? void 0 : e.stack) || e);
@@ -1031,13 +1031,12 @@ ${merge.scriptName}을 실행하면 최종 MP4가 생성됩니다.`,
   }
   async function beginFromUi() {
     if (!S.canStart) {
-      return toast("아직 스트림을 준비하고 있습니다. 잠시 후 다시 시도하세요.", "warn");
+      return toast("스트림 준비 중입니다.", "warn");
     }
     try {
-      toast("저장 폴더를 준비하고 있습니다.", "warn", 1800);
       const dir = await chooseDirectory();
       await start(dir);
-      toast("● 원본 녹화를 시작했습니다.");
+      toast("녹화를 시작했습니다.");
     } catch (error) {
       if ((error == null ? void 0 : error.name) !== "AbortError") {
         toast(friendlyError(error), "error", 7e3);
@@ -1138,7 +1137,7 @@ ${merge.scriptName}을 실행하면 최종 MP4가 생성됩니다.`,
       <div style="display:flex;gap:7px;flex-wrap:wrap">
         <button id="sarPrimary" style="flex:1;min-width:120px;padding:9px 14px;border:0;border-radius:8px;background:#00c471;color:#141414;font-weight:700;cursor:pointer;font-size:12.5px;transition:opacity .15s">새 녹화 시작</button>
         <button id="sarFolder" style="padding:9px 12px;border:1px solid #2e2e2e;border-radius:8px;background:#1e1e1e;color:#b3b3b3;font-weight:600;cursor:pointer;font-size:12px">폴더 변경</button>
-        <button id="sarDebug" style="width:100%;margin-top:2px;padding:8px 10px;border:1px solid #282828;border-radius:8px;background:transparent;color:#737373;font-weight:600;cursor:pointer;font-size:11.5px">상세 모니터링 대시보드</button>
+        <button id="sarDebug" style="width:100%;margin-top:2px;padding:8px 10px;border:1px solid #282828;border-radius:8px;background:transparent;color:#737373;font-weight:600;cursor:pointer;font-size:11.5px">모니터링 대시보드</button>
       </div>`;
       document.documentElement.appendChild(popover);
       const primaryBtn = popover.querySelector("#sarPrimary");
@@ -1158,7 +1157,7 @@ ${merge.scriptName}을 실행하면 최종 MP4가 생성됩니다.`,
           try {
             const handle = await pickNewDirectory();
             S.directory = handle;
-            toast(`저장 폴더가 [${handle.name}] 폴더로 변경되었습니다.`);
+            toast(`저장 폴더 변경: ${handle.name}`);
             updatePopoverContent();
           } catch (error) {
             if ((error == null ? void 0 : error.name) !== "AbortError") {
@@ -1202,26 +1201,26 @@ ${merge.scriptName}을 실행하면 최종 MP4가 생성됩니다.`,
     const secs = String(elapsed % 60).padStart(2, "0");
     if (S.stopping || S.starting) {
       controlButton.innerHTML = `<span style="display:inline-block;width:16px;height:16px;border:2px solid rgba(255,255,255,0.3);border-top-color:#00c471;border-radius:50%;animation:soopAllRecordSpin .8s linear infinite;box-sizing:border-box;"></span>`;
-      controlButton.title = S.starting ? "녹화 시작 준비 중..." : "파일 저장 마무리 중...";
+      controlButton.title = S.starting ? "녹화 준비 중..." : "저장 완료 중...";
     } else if (S.recording) {
       controlButton.innerHTML = `
       <span style="display:inline-flex;align-items:center;gap:5px;padding:3px 8px;background:rgba(255,77,79,0.2);border:1px solid rgba(255,77,79,0.5);border-radius:14px;">
         <span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#ff4d4f;animation:soopAllRecordPulse 1.2s ease-in-out infinite;"></span>
         <span style="font-size:11.5px;font-weight:700;color:#ff7875;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;line-height:1;font-variant-numeric:tabular-nums;">${mins}:${secs}</span>
       </span>`;
-      controlButton.title = `SOOP 원본 녹화 중 · ${mb(S.bytes)} MiB · 좌클릭: 중지 · 우클릭: 상세 정보`;
+      controlButton.title = `SOOP 녹화 중 · ${mb(S.bytes)} MiB (좌클릭: 중지, 우클릭: 대시보드)`;
     } else if (S.canStart) {
       controlButton.innerHTML = `
       <span style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;">
         <span style="display:inline-block;width:13px;height:13px;border-radius:50%;background:#00c471;transition:transform .15s ease;"></span>
       </span>`;
-      controlButton.title = "SOOP 원본 녹화 준비 완료 · 좌클릭: 녹화 시작 · 우클릭: 상세 정보";
+      controlButton.title = "SOOP 녹화 준비 완료 (좌클릭: 시작, 우클릭: 대시보드)";
     } else {
       controlButton.innerHTML = `
       <span style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;">
         <span style="display:inline-block;width:12px;height:12px;border-radius:50%;border:2px solid #666666;background:transparent;box-sizing:border-box;"></span>
       </span>`;
-      controlButton.title = "SOOP 원본 녹화 초기화 세그먼트 준비 중";
+      controlButton.title = "스트림 준비 중...";
     }
   }
   function installControlButton() {
@@ -1317,7 +1316,7 @@ ${merge.scriptName}을 실행하면 최종 MP4가 생성됩니다.`,
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>SOOP 원본 녹화 · 상세 모니터링</title>
+  <title>SOOP 원본 녹화 대시보드</title>
   <style>
     :root {
       --bg-base: #121212;
@@ -1700,7 +1699,7 @@ ${merge.scriptName}을 실행하면 최종 MP4가 생성됩니다.`,
       </button>
       <button class="btn btn-green" id="startBtn" disabled>
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/></svg>
-        녹화 시작 · 폴더 선택
+        녹화 시작
       </button>
       <button class="btn btn-red" id="stopBtn" disabled>
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
@@ -1736,8 +1735,8 @@ ${merge.scriptName}을 실행하면 최종 MP4가 생성됩니다.`,
     <!-- 미디어 조각 및 파이프라인 지표 (4-Column) -->
     <section class="panel">
       <div class="panel-header">
-        <h2 class="panel-title">미디어 청크(Chunk) 파이프라인 지표</h2>
-        <span class="panel-subinfo">Direct-to-Disk 무손실 무재인코딩</span>
+        <h2 class="panel-title">청크 파이프라인 지표</h2>
+        <span class="panel-subinfo">실시간 무손실 저장</span>
       </div>
       <div class="sub-grid" id="pipelineGrid"></div>
       <div id="missingReport" style="margin-top:14px;padding:12px 18px;background:var(--bg-card);border:1px solid var(--border-light);border-radius:10px;font-size:13px;"></div>
@@ -1746,7 +1745,7 @@ ${merge.scriptName}을 실행하면 최종 MP4가 생성됩니다.`,
     <!-- 녹화 세그먼트 (Part 목록) - Full Width -->
     <section class="panel">
       <div class="panel-header">
-        <h2 class="panel-title">녹화 파일 세그먼트 (Part 목록)</h2>
+        <h2 class="panel-title">세그먼트 목록 (Part)</h2>
       </div>
       <div class="table-box">
         <table>
@@ -1768,7 +1767,7 @@ ${merge.scriptName}을 실행하면 최종 MP4가 생성됩니다.`,
     <!-- 활성 미디어 버퍼 (MSE) - Full Width -->
     <section class="panel">
       <div class="panel-header">
-        <h2 class="panel-title">활성 미디어 소스 버퍼 (MSE 트랙)</h2>
+        <h2 class="panel-title">미디어 버퍼 (트랙)</h2>
       </div>
       <div class="table-box">
         <table>
@@ -1790,7 +1789,7 @@ ${merge.scriptName}을 실행하면 최종 MP4가 생성됩니다.`,
     <!-- 타임라인 무결성 & 최종 파일 - Full Width -->
     <section class="panel">
       <div class="panel-header">
-        <h2 class="panel-title">타임라인 무결성 및 완료 파일</h2>
+        <h2 class="panel-title">타임라인 상태 및 결과</h2>
       </div>
       <div style="display:flex;flex-direction:column;gap:12px">
         <div id="anomaliesBox"></div>
@@ -1801,8 +1800,7 @@ ${merge.scriptName}을 실행하면 최종 MP4가 생성됩니다.`,
     <!-- 실시간 이벤트 콘솔 - Full Width -->
     <section class="panel">
       <div class="panel-header">
-        <h2 class="panel-title">실시간 이벤트 콘솔</h2>
-        <span class="panel-subinfo">실시간 파이프라인 이벤트</span>
+        <h2 class="panel-title">이벤트 로그</h2>
       </div>
       <div id="logTerminal" class="log-box"></div>
     </section>
@@ -1810,7 +1808,7 @@ ${merge.scriptName}을 실행하면 최종 MP4가 생성됩니다.`,
     <!-- 진단 JSON 데이터 - Full Width -->
     <section class="panel">
       <div class="panel-header">
-        <h2 class="panel-title">진단 데이터 스냅샷 (JSON)</h2>
+        <h2 class="panel-title">진단 데이터 (JSON)</h2>
       </div>
       <textarea id="jsonBox" class="json-textarea" readonly></textarea>
     </section>
@@ -1836,12 +1834,12 @@ ${merge.scriptName}을 실행하면 최종 MP4가 생성됩니다.`,
       const c = s.capture;
       const f = c.fragments;
       const isReady = c.canStart && !c.recording && !c.starting && !c.stopping;
-      const stateTitle = c.rotating ? "Part 교체 중" : c.starting ? "파일 생성 중" : c.stopping ? "파일 마무리 중" : c.recording ? "녹화 진행 중" : isReady ? c.completedAt ? "저장 완료 (새 녹화 대기)" : "녹화 준비 완료" : "스트림 감지 대기";
+      const stateTitle = c.rotating ? "Part 교체 중" : c.starting ? "파일 생성 중" : c.stopping ? "저장 완료 중" : c.recording ? "녹화 진행 중" : isReady ? c.completedAt ? "저장 완료 (대기 중)" : "녹화 준비 완료" : "스트림 대기 중";
       const stateColorClass = c.error ? "val-red" : c.recording ? "val-red" : isReady ? "val-green" : "val-orange";
       const startBtn2 = $("#startBtn");
       if (startBtn2) {
         startBtn2.disabled = !isReady;
-        startBtn2.textContent = isReady ? "녹화 시작 · 폴더 선택" : c.recording ? "녹화 진행 중" : "스트림 대기 중";
+        startBtn2.textContent = isReady ? "녹화 시작" : c.recording ? "녹화 중" : "대기 중";
       }
       const stopBtn2 = $("#stopBtn");
       if (stopBtn2) {
@@ -1860,7 +1858,7 @@ ${merge.scriptName}을 실행하면 최종 MP4가 생성됩니다.`,
       }
       const kpiStatusDesc = $("#kpiStatusDesc");
       if (kpiStatusDesc) {
-        kpiStatusDesc.textContent = c.recording ? `Part ${c.partCount} 녹화 진행 중 · 오류 없음` : isReady ? c.completedAt ? `이전 녹화 저장 완료 (${c.sizeMiB} MiB) · 다음 녹화 가능` : "스트림 준비 완료 · 언제든 녹화 시작 가능" : "SOOP 플레이어 스트림 연결 대기 중";
+        kpiStatusDesc.textContent = c.recording ? `Part ${c.partCount} 녹화 중` : isReady ? c.completedAt ? `이전 녹화 완료 (${c.sizeMiB} MiB)` : "녹화 준비 완료" : "스트림 연결 대기 중";
       }
       const kpiTime = $("#kpiTime");
       if (kpiTime) {
@@ -1959,16 +1957,16 @@ ${merge.scriptName}을 실행하면 최종 MP4가 생성됩니다.`,
           <div style="padding:12px 18px;background:rgba(255,160,0,0.15);border:1px solid var(--accent-orange);border-radius:10px;color:var(--accent-orange);font-size:13px">
             Track ${x.trackId} · ${esc(x.type)} · seq ${x.sequence ?? "-"}
           </div>`
-        ).join("") : '<div style="padding:14px 18px;background:var(--bg-card);border:1px solid var(--border);border-radius:10px;color:var(--accent-green);font-size:13px;font-weight:700">✓ 타임라인 불연속(이상 감지) 없음 · 원본 스트림 안정 수신 중</div>';
+        ).join("") : '<div style="padding:14px 18px;background:var(--bg-card);border:1px solid var(--border);border-radius:10px;color:var(--accent-green);font-size:13px;font-weight:700">✓ 타임라인 이상 없음</div>';
       }
       const outputBox = $("#outputBox");
       if (outputBox) {
         outputBox.innerHTML = c.mergeScript ? `
         <div style="padding:14px 18px;background:var(--bg-card);border:1px solid var(--border);border-radius:10px;font-size:13px">
-          <div style="margin-bottom:6px;font-weight:700;color:var(--accent-green)">무손실 파일 저장 완료</div>
+          <div style="margin-bottom:6px;font-weight:700;color:var(--accent-green)">저장 완료</div>
           <div style="margin-bottom:4px"><b>병합 스크립트:</b> <code>${esc(c.mergeScript)}</code></div>
-          <div><b>최종 완성 파일:</b> <code>${esc(c.mergedFilename)}</code></div>
-        </div>` : `<div style="color:var(--text-muted);font-size:13px;padding:14px 18px;background:var(--bg-card);border:1px solid var(--border);border-radius:10px">녹화 중지 시 무손실 병합 스크립트(.bat)와 메타데이터 JSON이 디스크에 자동 생성됩니다.</div>`;
+          <div><b>완성 파일:</b> <code>${esc(c.mergedFilename)}</code></div>
+        </div>` : `<div style="color:var(--text-muted);font-size:13px;padding:14px 18px;background:var(--bg-card);border:1px solid var(--border);border-radius:10px">녹화 중지 시 병합 스크립트(.bat)가 생성됩니다.</div>`;
       }
       D.logs = s.logs.slice(-100);
       renderLogs();
@@ -2077,7 +2075,7 @@ ${merge.scriptName}을 실행하면 최종 MP4가 생성됩니다.`,
         S.broadcastId = current;
         log("warn", "broadcast-changed", "방송 ID 변경 감지", { previous, current });
         if (S.recording) {
-          toast("다른 방송으로 이동하여 기존 녹화를 마무리합니다.", "warn", 6e3);
+          toast("방송 이동 감지 · 녹화를 종료합니다.", "warn", 5e3);
           stop();
         }
       }
@@ -2085,7 +2083,7 @@ ${merge.scriptName}을 실행하면 최종 MP4가 생성됩니다.`,
     page.addEventListener("beforeunload", (event) => {
       if (S.recording || S.stopping || S.rotating) {
         event.preventDefault();
-        event.returnValue = "녹화 파일을 기록 중입니다.";
+        event.returnValue = "녹화 중입니다.";
       }
     });
     setTimeout(send, 500);

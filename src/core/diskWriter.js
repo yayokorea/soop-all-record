@@ -95,7 +95,7 @@ export async function rotatePart(reason) {
   S.rotating = true;
   S.rotationReason = reason;
   send();
-  toast(`${reason === 'quality-change' ? '화질 변경' : '재연결'} 감지 · 새 Part 준비 중`, 'warn', 3500);
+  toast(`${reason === 'quality-change' ? '화질 변경' : '재연결'} 감지 · Part 전환 중`, 'warn', 3000);
 
   try {
     await new Promise(resolve => setTimeout(resolve, 650));
@@ -145,7 +145,7 @@ export async function rotatePart(reason) {
       queued: queued.length,
       discardedOldSource: discarded
     });
-    toast(`Part ${part.number} · ${part.label}로 녹화를 계속합니다.`);
+    toast(`Part ${part.number} (${part.label}) 녹화 시작`);
   } catch (error) {
     S.error = String(error?.stack || error);
     S.recording = false;
@@ -286,10 +286,10 @@ export function writeFragment(r, data, info, bs) {
   queue(target, data, part);
 
   if (S.pendingBytes > 134217728 && S.pendingBytes - data.byteLength <= 134217728) {
-    toast(`디스크 쓰기가 밀리고 있습니다 · ${mb(S.pendingBytes)} MiB 대기`, 'warn', 6000);
+    toast(`디스크 쓰기 지연: ${mb(S.pendingBytes)} MiB 대기`, 'warn', 5000);
   }
   if (S.pendingBytes > 536870912) {
-    toast('디스크 쓰기 지연이 512 MiB를 넘어 안전을 위해 녹화를 중지합니다.', 'error', 9000);
+    toast('쓰기 지연 초과로 녹화를 중지합니다.', 'error', 8000);
     stop();
   }
   if (S.chunks <= 10 || S.chunks % 20 === 0) {
@@ -409,9 +409,9 @@ export async function stop() {
     log('info', 'stopped', '파일 쓰기 완료 및 무손실 병합 스크립트 생성', { files, merge });
     const missing = [...S.fragmentStats.missing].filter(([, m]) => m.confirmed).length;
     toast(
-      `✓ 녹화 저장 완료 · ${mb(S.bytes)} MiB · Part ${S.parts.length}개 · 누락 ${missing}\n${merge.scriptName}을 실행하면 최종 MP4가 생성됩니다.`,
+      `녹화 완료 (${mb(S.bytes)} MiB, Part ${S.parts.length}개)\n${merge.scriptName} 실행 시 MP4가 생성됩니다.`,
       'ok',
-      9000
+      8000
     );
   } catch (e) {
     S.error = String(e?.stack || e);

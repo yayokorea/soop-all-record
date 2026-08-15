@@ -36,13 +36,12 @@ export function openDebug() {
 
 export async function beginFromUi() {
   if (!S.canStart) {
-    return toast('아직 스트림을 준비하고 있습니다. 잠시 후 다시 시도하세요.', 'warn');
+    return toast('스트림 준비 중입니다.', 'warn');
   }
   try {
-    toast('저장 폴더를 준비하고 있습니다.', 'warn', 1800);
     const dir = await chooseDirectory();
     await start(dir);
-    toast('● 원본 녹화를 시작했습니다.');
+    toast('녹화를 시작했습니다.');
   } catch (error) {
     if (error?.name !== 'AbortError') {
       toast(friendlyError(error), 'error', 7000);
@@ -183,7 +182,7 @@ export function showPopover(reposition = true) {
       <div style="display:flex;gap:7px;flex-wrap:wrap">
         <button id="sarPrimary" style="flex:1;min-width:120px;padding:9px 14px;border:0;border-radius:8px;background:#00c471;color:#141414;font-weight:700;cursor:pointer;font-size:12.5px;transition:opacity .15s">새 녹화 시작</button>
         <button id="sarFolder" style="padding:9px 12px;border:1px solid #2e2e2e;border-radius:8px;background:#1e1e1e;color:#b3b3b3;font-weight:600;cursor:pointer;font-size:12px">폴더 변경</button>
-        <button id="sarDebug" style="width:100%;margin-top:2px;padding:8px 10px;border:1px solid #282828;border-radius:8px;background:transparent;color:#737373;font-weight:600;cursor:pointer;font-size:11.5px">상세 모니터링 대시보드</button>
+        <button id="sarDebug" style="width:100%;margin-top:2px;padding:8px 10px;border:1px solid #282828;border-radius:8px;background:transparent;color:#737373;font-weight:600;cursor:pointer;font-size:11.5px">모니터링 대시보드</button>
       </div>`;
 
     document.documentElement.appendChild(popover);
@@ -207,7 +206,7 @@ export function showPopover(reposition = true) {
         try {
           const handle = await pickNewDirectory();
           S.directory = handle;
-          toast(`저장 폴더가 [${handle.name}] 폴더로 변경되었습니다.`);
+          toast(`저장 폴더 변경: ${handle.name}`);
           updatePopoverContent();
         } catch (error) {
           if (error?.name !== 'AbortError') {
@@ -265,26 +264,26 @@ export function updateControlButton() {
 
   if (S.stopping || S.starting) {
     controlButton.innerHTML = `<span style="display:inline-block;width:16px;height:16px;border:2px solid rgba(255,255,255,0.3);border-top-color:#00c471;border-radius:50%;animation:soopAllRecordSpin .8s linear infinite;box-sizing:border-box;"></span>`;
-    controlButton.title = S.starting ? '녹화 시작 준비 중...' : '파일 저장 마무리 중...';
+    controlButton.title = S.starting ? '녹화 준비 중...' : '저장 완료 중...';
   } else if (S.recording) {
     controlButton.innerHTML = `
       <span style="display:inline-flex;align-items:center;gap:5px;padding:3px 8px;background:rgba(255,77,79,0.2);border:1px solid rgba(255,77,79,0.5);border-radius:14px;">
         <span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#ff4d4f;animation:soopAllRecordPulse 1.2s ease-in-out infinite;"></span>
         <span style="font-size:11.5px;font-weight:700;color:#ff7875;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;line-height:1;font-variant-numeric:tabular-nums;">${mins}:${secs}</span>
       </span>`;
-    controlButton.title = `SOOP 원본 녹화 중 · ${mb(S.bytes)} MiB · 좌클릭: 중지 · 우클릭: 상세 정보`;
+    controlButton.title = `SOOP 녹화 중 · ${mb(S.bytes)} MiB (좌클릭: 중지, 우클릭: 대시보드)`;
   } else if (S.canStart) {
     controlButton.innerHTML = `
       <span style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;">
         <span style="display:inline-block;width:13px;height:13px;border-radius:50%;background:#00c471;transition:transform .15s ease;"></span>
       </span>`;
-    controlButton.title = 'SOOP 원본 녹화 준비 완료 · 좌클릭: 녹화 시작 · 우클릭: 상세 정보';
+    controlButton.title = 'SOOP 녹화 준비 완료 (좌클릭: 시작, 우클릭: 대시보드)';
   } else {
     controlButton.innerHTML = `
       <span style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;">
         <span style="display:inline-block;width:12px;height:12px;border-radius:50%;border:2px solid #666666;background:transparent;box-sizing:border-box;"></span>
       </span>`;
-    controlButton.title = 'SOOP 원본 녹화 초기화 세그먼트 준비 중';
+    controlButton.title = '스트림 준비 중...';
   }
 }
 

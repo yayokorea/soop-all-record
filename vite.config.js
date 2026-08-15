@@ -13,7 +13,7 @@ export default defineConfig({
         name: 'SOOP(숲) 라이브 무손실 원본 녹화기',
         namespace: 'https://github.com/yayokorea/soop-all-record',
         version: pkg.version,
-        description: 'SOOP 라이브 원본 스트림을 File System Access API로 브라우저 메모리 누수 없이 실시간 디스크에 무손실로 저장하고 병합 배치를 생성합니다.',
+        description: 'SOOP 라이브 원본 스트림을 디스크에 무손실로 저장합니다.',
         author: 'Yayo',
         match: ['https://play.sooplive.com/*'],
         icon: 'https://res.sooplive.com/afreeca.ico',
