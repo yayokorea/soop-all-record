@@ -10,12 +10,13 @@ import { updateControlButton, send } from './mseHook.js';
 export const kind = r => (r.mime.includes('video') ? 'video' : r.mime.includes('audio') ? 'audio' : `buffer-${r.id}`);
 export const ext = r => (r.mime.includes('mp4') ? 'mp4' : r.mime.includes('webm') ? 'webm' : 'bin');
 
-export const clean = value => {
-  const result = String(value || 'SOOP')
+export const clean = (value, fallback = '') => {
+  const str = value !== undefined && value !== null ? String(value) : fallback;
+  const result = str
     .replace(/[<>:"/\\|?*\x00-\x1F]/g, '_')
     .replace(/[. ]+$/g, '')
     .trim();
-  return (result || 'SOOP').slice(0, 80);
+  return (result || fallback).slice(0, 80);
 };
 
 export const localStamp = () => {
@@ -24,7 +25,33 @@ export const localStamp = () => {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}_${p(d.getHours())}-${p(d.getMinutes())}-${p(d.getSeconds())}`;
 };
 
-export const broadcastName = () => clean((document.title || 'SOOP').split('•')[0].trim());
+export const streamerName = () => {
+  const win = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
+  const nick = win.szBjNick
+    || win.oBroadInfo?.szBjNick
+    || win.oBroadInfo?.bjNick
+    || win.liveInfo?.bjNick
+    || document.querySelector('.streamer_nick, button[report-name="bj_nickname"], .nickname, a.nickname')?.textContent?.trim()
+    || ((document.title || '').split('•')[1] || '').replace(/\|\s*SOOP.*/i, '').trim();
+  return clean(nick, '');
+};
+
+export const broadcastTitle = () => {
+  const win = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
+  const title = win.szBroadTitle
+    || win.oBroadInfo?.szBroadTitle
+    || (document.title || 'SOOP').split('•')[0].trim();
+  return clean(title, 'SOOP');
+};
+
+export const broadcastName = () => {
+  const streamer = streamerName();
+  const title = broadcastTitle();
+  if (streamer) {
+    return `${streamer}_${title}`;
+  }
+  return title;
+};
 export const activeRecords = () => {
   const active = [...S.activeByKind.values()].filter(r => r.init);
   if (active.length > 0) return active;

@@ -445,16 +445,36 @@
   }
   const kind = (r) => r.mime.includes("video") ? "video" : r.mime.includes("audio") ? "audio" : `buffer-${r.id}`;
   const ext = (r) => r.mime.includes("mp4") ? "mp4" : r.mime.includes("webm") ? "webm" : "bin";
-  const clean = (value) => {
-    const result = String(value || "SOOP").replace(/[<>:"/\\|?*\x00-\x1F]/g, "_").replace(/[. ]+$/g, "").trim();
-    return (result || "SOOP").slice(0, 80);
+  const clean = (value, fallback = "") => {
+    const str = value !== void 0 && value !== null ? String(value) : fallback;
+    const result = str.replace(/[<>:"/\\|?*\x00-\x1F]/g, "_").replace(/[. ]+$/g, "").trim();
+    return (result || fallback).slice(0, 80);
   };
   const localStamp = () => {
     const d = /* @__PURE__ */ new Date();
     const p = (n) => String(n).padStart(2, "0");
     return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}_${p(d.getHours())}-${p(d.getMinutes())}-${p(d.getSeconds())}`;
   };
-  const broadcastName = () => clean((document.title || "SOOP").split("•")[0].trim());
+  const streamerName = () => {
+    var _a, _b, _c, _d, _e;
+    const win = typeof unsafeWindow !== "undefined" ? unsafeWindow : window;
+    const nick = win.szBjNick || ((_a = win.oBroadInfo) == null ? void 0 : _a.szBjNick) || ((_b = win.oBroadInfo) == null ? void 0 : _b.bjNick) || ((_c = win.liveInfo) == null ? void 0 : _c.bjNick) || ((_e = (_d = document.querySelector('.streamer_nick, button[report-name="bj_nickname"], .nickname, a.nickname')) == null ? void 0 : _d.textContent) == null ? void 0 : _e.trim()) || ((document.title || "").split("•")[1] || "").replace(/\|\s*SOOP.*/i, "").trim();
+    return clean(nick, "");
+  };
+  const broadcastTitle = () => {
+    var _a;
+    const win = typeof unsafeWindow !== "undefined" ? unsafeWindow : window;
+    const title = win.szBroadTitle || ((_a = win.oBroadInfo) == null ? void 0 : _a.szBroadTitle) || (document.title || "SOOP").split("•")[0].trim();
+    return clean(title, "SOOP");
+  };
+  const broadcastName = () => {
+    const streamer = streamerName();
+    const title = broadcastTitle();
+    if (streamer) {
+      return `${streamer}_${title}`;
+    }
+    return title;
+  };
   const activeRecords = () => {
     const active = [...S.activeByKind.values()].filter((r) => r.init);
     if (active.length > 0) return active;
