@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SOOP(숲) 라이브 무손실 원본 녹화기
 // @namespace    https://github.com/yayokorea/soop-all-record
-// @version      4.0.0
+// @version      4.0.1
 // @author       Yayo
 // @description  SOOP 라이브 원본 스트림을 File System Access API로 브라우저 메모리 누수 없이 실시간 디스크에 무손실로 저장하고 병합 배치를 생성합니다.
 // @license      MIT
@@ -24,12 +24,22 @@
   const debugId = new URLSearchParams(location.search).get(PARAM);
   const id = `soop-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const bus = new page.BroadcastChannel(id);
+  const isCanStart = () => {
+    if (S.recording || S.starting || S.stopping) return false;
+    const activeCount = [...S.activeByKind.values()].filter((r) => r.init).length;
+    const bufferCount = [...S.buffers.values()].filter((r) => r.init).length;
+    return activeCount > 0 || bufferCount > 0;
+  };
   const S = {
-    version: "4.0.0",
+    version: "4.0.1",
     recording: false,
     starting: false,
     stopping: false,
-    canStart: false,
+    get canStart() {
+      return isCanStart();
+    },
+    set canStart(_) {
+    },
     buffers: /* @__PURE__ */ new Map(),
     byObject: /* @__PURE__ */ new WeakMap(),
     nextId: 0,
@@ -94,7 +104,7 @@
         recording: S.recording,
         starting: S.starting,
         stopping: S.stopping,
-        canStart: S.canStart,
+        canStart: isCanStart(),
         storageMode: "File System Access API / direct-to-disk",
         memoryLimit: null,
         bytes: S.bytes,
@@ -428,7 +438,11 @@
     return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}_${p(d.getHours())}-${p(d.getMinutes())}-${p(d.getSeconds())}`;
   };
   const broadcastName = () => clean((document.title || "SOOP").split("•")[0].trim());
-  const activeRecords = () => [...S.activeByKind.values()].filter((r) => r.init);
+  const activeRecords = () => {
+    const active = [...S.activeByKind.values()].filter((r) => r.init);
+    if (active.length > 0) return active;
+    return [...S.buffers.values()].filter((r) => r.init);
+  };
   const partTag = () => `part${String(S.partNo).padStart(3, "0")}`;
   async function closeActiveWriters() {
     const files = [];
@@ -666,7 +680,6 @@
       throw new Error("아직 초기화 세그먼트가 준비되지 않았습니다.");
     }
     S.starting = true;
-    S.canStart = false;
     S.error = null;
     send();
     const opened = [];
@@ -769,8 +782,7 @@ ${merge.scriptName}을 실행하면 최종 MP4가 생성됩니다.`,
     } finally {
       S.stopping = false;
       S.startedAt = null;
-      readiness();
-      send();
+      readiness(true);
     }
   }
   function copy(input) {
@@ -826,20 +838,24 @@ ${merge.scriptName}을 실행하면 최종 MP4가 생성됩니다.`,
     updateControlButton$1();
     bus.postMessage({ type: "snapshot", snapshot: snap() });
   }
-  function readiness$1() {
+  function readiness$1(immediate = false) {
     clearTimeout(S.readyTimer);
-    S.canStart = false;
-    S.readyTimer = setTimeout(() => {
-      const rs = [...S.activeByKind.values()];
-      S.canStart = !S.recording && !S.starting && !S.stopping && rs.length > 0 && rs.every((r) => r.init);
+    const check = () => {
+      const active = [...S.activeByKind.values()].filter((r) => r.init);
+      const allWithInit = [...S.buffers.values()].filter((r) => r.init);
       log(
         "info",
         "readiness",
         S.canStart ? "녹화 시작 가능" : "초기화 세그먼트 대기",
-        rs.map((r) => ({ id: r.id, mime: r.mime, ready: !!r.init }))
+        { active: active.length, totalWithInit: allWithInit.length, canStart: S.canStart }
       );
       send();
-    }, 750);
+    };
+    if (immediate) {
+      check();
+    } else {
+      S.readyTimer = setTimeout(check, 250);
+    }
   }
   function setupMseHooks() {
     const originalAdd = page.MediaSource.prototype.addSourceBuffer;
@@ -996,22 +1012,26 @@ ${merge.scriptName}을 실행하면 최종 MP4가 생성됩니다.`,
       }
     }
   }
-  function showPopover() {
-    var _a;
+  function showPopover(reposition = true) {
+    var _a, _b;
     if (!popover) {
       popover = document.createElement("div");
       popover.id = "soopAllRecordPopover";
       Object.assign(popover.style, {
         position: "fixed",
         zIndex: "2147483646",
-        width: "310px",
-        padding: "16px 18px",
-        border: "1px solid #e2e8f0",
+        width: "320px",
+        padding: "18px",
         borderRadius: "14px",
-        background: "#ffffff",
-        color: "#1e293b",
+        background: "rgba(20, 20, 20, 0.96)",
+        backdropFilter: "blur(20px)",
+        webkitBackdropFilter: "blur(20px)",
+        border: "1px solid #2e2e2e",
+        color: "#ffffff",
         font: '13px/1.5 -apple-system, BlinkMacSystemFont, "Pretendard", "Segoe UI", Roboto, sans-serif',
-        boxShadow: "0 16px 36px -4px rgba(15, 23, 42, 0.12), 0 4px 12px rgba(0,0,0,0.06)"
+        boxShadow: "0 20px 40px -12px rgba(0, 0, 0, 0.7), 0 0 1px 1px rgba(255, 255, 255, 0.06)",
+        boxSizing: "border-box",
+        userSelect: "none"
       });
       document.documentElement.appendChild(popover);
       document.addEventListener(
@@ -1024,52 +1044,86 @@ ${merge.scriptName}을 실행하면 최종 MP4가 생성됩니다.`,
         true
       );
     }
-    const rect = controlButton.getBoundingClientRect();
-    const stateText = S.stopping ? "파일 마무리 중" : S.starting ? "파일 생성 중" : S.recording ? "녹화 중" : S.canStart ? "녹화 준비 완료" : "스트림 준비 중";
+    const stateText = S.stopping ? "저장 마무리 중" : S.starting ? "녹화 준비 중" : S.recording ? "녹화 진행 중" : S.canStart ? "녹화 대기 중" : "스트림 감지 중";
     const fs = S.fragmentStats;
     const missing = [...fs.missing].filter(([, m]) => m.confirmed).length;
-    const summary = S.recording ? `● ${Math.round((Date.now() - S.startedAt) / 1e3)}초 · ${mb(S.bytes)} MiB<br><span style="font-size:12px;color:#64748b">저장 ${fs.written}/${fs.queued} · 누락 ${missing} · Part ${S.parts.length} · 대기 ${mb(S.pendingBytes)} MiB</span>` : S.completedAt ? `저장 ${fs.written}/${fs.queued} · 누락 ${missing} · Part ${S.parts.length}<br><span style="font-size:12px;color:#64748b">${S.mergeScript || ""}</span>` : `영상/음성 초기화 ${[...S.activeByKind.values()].filter((r) => r.init).length}/${S.activeByKind.size}`;
-    const statusBg = S.recording ? "#fee2e2" : S.canStart ? "#d1fae5" : "#f1f5f9";
-    const statusColor = S.recording ? "#dc2626" : S.canStart ? "#059669" : "#64748b";
+    const elapsed = S.startedAt ? Math.round((Date.now() - S.startedAt) / 1e3) : 0;
+    const elapsedMin = Math.floor(elapsed / 60);
+    const elapsedSec = String(elapsed % 60).padStart(2, "0");
+    const summary = S.recording ? `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+         <span style="font-weight:800;font-size:17px;color:#ff4d4f;font-variant-numeric:tabular-nums">${elapsedMin}:${elapsedSec}</span>
+         <span style="font-weight:700;font-size:14px;color:#ffffff">${mb(S.bytes)} <span style="font-size:11px;color:#737373">MiB</span></span>
+       </div>
+       <div style="font-size:11px;color:#b3b3b3;display:grid;grid-template-columns:1fr 1fr;gap:5px;line-height:1.4">
+         <div>저장: <span style="color:#ffffff;font-weight:700">${fs.written}/${fs.queued}</span></div>
+         <div>누락: <span style="color:${missing > 0 ? "#ff4d4f" : "#00c471"};font-weight:700">${missing}</span></div>
+         <div>세그먼트: <span style="color:#ffffff;font-weight:700">Part ${S.parts.length}</span></div>
+         <div>대기 큐: <span style="color:#ffffff;font-weight:700">${mb(S.pendingBytes)} MiB</span></div>
+       </div>` : S.completedAt ? `<div style="font-size:12px;color:#ffffff;margin-bottom:4px">저장 완료: <b>${fs.written}개 청크</b> (Part ${S.parts.length})</div>
+         <div style="font-size:11px;color:#737373;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${S.mergeScript || "병합 스크립트 생성됨"}</div>` : `<div style="font-size:12px;color:#b3b3b3">미디어 트랙 초기화: <b style="color:#00c471">${[...S.activeByKind.values()].filter((r) => r.init).length}/${S.activeByKind.size}</b></div>`;
+    const statusBg = S.recording ? "rgba(255, 77, 79, 0.18)" : S.canStart ? "rgba(0, 196, 113, 0.18)" : "rgba(255, 160, 0, 0.18)";
+    const statusColor = S.recording ? "#ff4d4f" : S.canStart ? "#00c471" : "#ffa000";
+    const dotColor = S.recording ? "#ff4d4f" : S.canStart ? "#00c471" : "#ffa000";
     popover.innerHTML = `
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-      <div style="font-weight:700;font-size:15px;color:#0f172a;display:flex;align-items:center;gap:6px">
-        <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${S.recording ? "#ef4444" : S.canStart ? "#10b981" : "#94a3b8"};"></span>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+      <div style="font-weight:700;font-size:14px;color:#ffffff;display:flex;align-items:center;gap:8px">
+        <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${dotColor};"></span>
         SOOP 원본 녹화
       </div>
-      <span style="font-size:11px;font-weight:600;padding:2px 7px;border-radius:999px;background:${statusBg};color:${statusColor}">${stateText}</span>
+      <span style="font-size:11px;font-weight:700;padding:3px 8px;border-radius:20px;background:${statusBg};color:${statusColor}">${stateText}</span>
     </div>
-    <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px;margin-bottom:12px;font-size:12px;color:#334155">${summary}</div>
-    <div style="color:#64748b;font-size:12px;margin-bottom:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">저장 폴더: <b>${((_a = S.directory) == null ? void 0 : _a.name) || "처음 시작할 때 선택"}</b></div>
-    <div style="display:flex;gap:6px;flex-wrap:wrap">
-      <button id="sarPrimary" style="flex:1;padding:8px 12px;border:0;border-radius:8px;background:${S.recording ? "#ef4444" : "#10b981"};color:#fff;font-weight:600;cursor:pointer;font-size:13px;box-shadow:0 2px 6px rgba(0,0,0,0.08)" ${!S.recording && !S.canStart || S.starting || S.stopping ? "disabled" : ""}>${S.recording ? "녹화 중지" : "새 녹화 시작"}</button>
-      <button id="sarFolder" style="padding:8px 10px;border:1px solid #cbd5e1;border-radius:8px;background:#ffffff;color:#334155;font-weight:500;cursor:pointer;font-size:12px" ${S.recording ? "disabled" : ""}>폴더 변경</button>
-      <button id="sarDebug" style="width:100%;margin-top:4px;padding:7px 10px;border:1px solid #e2e8f0;border-radius:8px;background:#f8fafc;color:#475569;font-weight:500;cursor:pointer;font-size:12px">상세 모니터링 대시보드 열기</button>
+    <div style="background:#1e1e1e;border:1px solid #282828;border-radius:10px;padding:12px 14px;margin-bottom:12px">${summary}</div>
+    <div style="color:#737373;font-size:11.5px;margin-bottom:14px;display:flex;align-items:center;gap:4px;overflow:hidden">
+      <span style="flex-shrink:0;color:#737373">폴더:</span>
+      <span style="font-weight:600;color:#b3b3b3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${((_a = S.directory) == null ? void 0 : _a.name) || "시작 시 지정"}">${((_b = S.directory) == null ? void 0 : _b.name) || "시작 시 지정"}</span>
+    </div>
+    <div style="display:flex;gap:7px;flex-wrap:wrap">
+      <button id="sarPrimary" style="flex:1;min-width:120px;padding:9px 14px;border:0;border-radius:8px;background:${S.recording ? "#ff4d4f" : "#00c471"};color:${S.recording ? "#ffffff" : "#141414"};font-weight:700;cursor:pointer;font-size:12.5px;transition:opacity .15s" ${!S.recording && !S.canStart || S.starting || S.stopping ? "disabled" : ""}>${S.recording ? "녹화 중지" : "새 녹화 시작"}</button>
+      <button id="sarFolder" style="padding:9px 12px;border:1px solid #2e2e2e;border-radius:8px;background:#1e1e1e;color:#b3b3b3;font-weight:600;cursor:pointer;font-size:12px" ${S.recording ? "disabled" : ""}>폴더 변경</button>
+      <button id="sarDebug" style="width:100%;margin-top:2px;padding:8px 10px;border:1px solid #282828;border-radius:8px;background:transparent;color:#737373;font-weight:600;cursor:pointer;font-size:11.5px">상세 모니터링 대시보드</button>
     </div>`;
-    popover.querySelector("#sarPrimary").onclick = async () => {
-      hidePopover();
-      if (S.recording) {
-        await stop();
-      } else {
-        await beginFromUi();
-      }
-    };
-    popover.querySelector("#sarFolder").onclick = async () => {
-      try {
-        const handle = await page.showDirectoryPicker({ mode: "readwrite", id: "soop-all-record" });
-        await rememberDirectory(handle);
-        S.directory = handle;
-        toast(`저장 폴더: ${handle.name}`);
-        showPopover();
-      } catch (error) {
-        if ((error == null ? void 0 : error.name) !== "AbortError") {
-          toast(friendlyError(error), "error");
+    const primaryBtn = popover.querySelector("#sarPrimary");
+    if (primaryBtn) {
+      primaryBtn.onclick = async () => {
+        hidePopover();
+        if (S.recording) {
+          await stop();
+        } else {
+          await beginFromUi();
         }
+      };
+    }
+    const folderBtn = popover.querySelector("#sarFolder");
+    if (folderBtn) {
+      folderBtn.onclick = async () => {
+        try {
+          const handle = await page.showDirectoryPicker({ mode: "readwrite", id: "soop-all-record" });
+          await rememberDirectory(handle);
+          S.directory = handle;
+          toast(`저장 폴더: ${handle.name}`);
+          showPopover(false);
+        } catch (error) {
+          if ((error == null ? void 0 : error.name) !== "AbortError") {
+            toast(friendlyError(error), "error");
+          }
+        }
+      };
+    }
+    const debugBtn = popover.querySelector("#sarDebug");
+    if (debugBtn) {
+      debugBtn.onclick = () => openDebug();
+    }
+    if (reposition || popover.style.display !== "block") {
+      const rect = controlButton == null ? void 0 : controlButton.getBoundingClientRect();
+      if (rect) {
+        const popoverWidth = 320;
+        const left = Math.max(12, Math.min(window.innerWidth - popoverWidth - 12, rect.right - popoverWidth));
+        const bottomDistance = Math.max(48, window.innerHeight - rect.top + 8);
+        popover.style.left = `${left}px`;
+        popover.style.bottom = `${bottomDistance}px`;
+        popover.style.top = "auto";
       }
-    };
-    popover.querySelector("#sarDebug").onclick = () => openDebug();
-    popover.style.left = `${Math.max(8, Math.min(innerWidth - 320, rect.right - 310))}px`;
-    popover.style.top = `${Math.max(8, rect.top - 230)}px`;
+    }
     popover.style.display = "block";
   }
   function updateControlButton() {
@@ -1078,25 +1132,25 @@ ${merge.scriptName}을 실행하면 최종 MP4가 생성됩니다.`,
     const mins = Math.floor(elapsed / 60);
     const secs = String(elapsed % 60).padStart(2, "0");
     if (S.stopping || S.starting) {
-      controlButton.innerHTML = `<span style="display:inline-block;width:16px;height:16px;border:2.5px solid #94a3b8;border-top-color:#10b981;border-radius:50%;animation:soopAllRecordSpin .8s linear infinite;box-sizing:border-box;"></span>`;
-      controlButton.title = S.starting ? "녹화 준비 중..." : "파일 저장 마무리 중...";
+      controlButton.innerHTML = `<span style="display:inline-block;width:16px;height:16px;border:2px solid rgba(255,255,255,0.3);border-top-color:#00c471;border-radius:50%;animation:soopAllRecordSpin .8s linear infinite;box-sizing:border-box;"></span>`;
+      controlButton.title = S.starting ? "녹화 시작 준비 중..." : "파일 저장 마무리 중...";
     } else if (S.recording) {
       controlButton.innerHTML = `
-      <span style="display:inline-flex;align-items:center;gap:6px;padding:3px 8px;background:rgba(239,68,68,0.18);border:1px solid rgba(239,68,68,0.4);border-radius:20px;">
-        <span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#ef4444;box-shadow:0 0 10px #ef4444;animation:soopAllRecordPulse 1.2s ease-in-out infinite;"></span>
-        <span style="font-size:12px;font-weight:700;color:#ff5a67;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;line-height:1;">${mins}:${secs}</span>
+      <span style="display:inline-flex;align-items:center;gap:5px;padding:3px 8px;background:rgba(255,77,79,0.2);border:1px solid rgba(255,77,79,0.5);border-radius:14px;">
+        <span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#ff4d4f;animation:soopAllRecordPulse 1.2s ease-in-out infinite;"></span>
+        <span style="font-size:11.5px;font-weight:700;color:#ff7875;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;line-height:1;font-variant-numeric:tabular-nums;">${mins}:${secs}</span>
       </span>`;
       controlButton.title = `SOOP 원본 녹화 중 · ${mb(S.bytes)} MiB · 좌클릭: 중지 · 우클릭: 상세 정보`;
     } else if (S.canStart) {
       controlButton.innerHTML = `
-      <span style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:50%;background:rgba(16,185,129,0.15);transition:all .2s ease;">
-        <span style="display:inline-block;width:16px;height:16px;border-radius:50%;background:#10b981;box-shadow:0 0 10px rgba(16,185,129,0.85);transition:transform .15s ease-out;"></span>
+      <span style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;">
+        <span style="display:inline-block;width:13px;height:13px;border-radius:50%;background:#00c471;transition:transform .15s ease;"></span>
       </span>`;
       controlButton.title = "SOOP 원본 녹화 준비 완료 · 좌클릭: 녹화 시작 · 우클릭: 상세 정보";
     } else {
       controlButton.innerHTML = `
-      <span style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:50%;">
-        <span style="display:inline-block;width:16px;height:16px;border-radius:50%;border:2px solid #8e9bad;background:transparent;box-sizing:border-box;"></span>
+      <span style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;">
+        <span style="display:inline-block;width:12px;height:12px;border-radius:50%;border:2px solid #666666;background:transparent;box-sizing:border-box;"></span>
       </span>`;
       controlButton.title = "SOOP 원본 녹화 초기화 세그먼트 준비 중";
     }
@@ -1154,7 +1208,7 @@ ${merge.scriptName}을 실행하면 최종 MP4가 생성됩니다.`,
       setInterval(() => {
         updateControlButton();
         if ((popover == null ? void 0 : popover.style.display) === "block") {
-          showPopover();
+          showPopover(false);
         }
       }, 1e3);
       return true;
@@ -1177,227 +1231,502 @@ ${merge.scriptName}을 실행하면 최종 MP4가 생성됩니다.`,
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>SOOP 원본 캡처 센터 · 상세 모니터링</title>
+  <title>SOOP 원본 녹화 · 상세 모니터링</title>
   <style>
     :root {
-      --bg: #f8fafc;
-      --card: #ffffff;
-      --text: #0f172a;
-      --text-sub: #475569;
-      --text-muted: #94a3b8;
-      --border: #e2e8f0;
-      --border-light: #f1f5f9;
-      --primary: #10b981;
-      --primary-light: #ecfdf5;
-      --primary-dark: #047857;
-      --danger: #ef4444;
-      --danger-light: #fef2f2;
-      --danger-dark: #b91c1c;
-      --warn: #f59e0b;
-      --warn-light: #fffbeb;
-      --warn-dark: #b45309;
-      --info: #3b82f6;
-      --info-light: #eff6ff;
-      --info-dark: #1d4ed8;
-      --shadow-sm: 0 1px 2px 0 rgba(0,0,0,0.05);
-      --shadow: 0 4px 12px -2px rgba(15,23,42,0.06), 0 2px 6px -2px rgba(15,23,42,0.04);
-      --shadow-lg: 0 12px 28px -4px rgba(15,23,42,0.08), 0 4px 12px -2px rgba(15,23,42,0.04);
+      --bg-base: #121212;
+      --bg-surface: #1c1c1c;
+      --bg-card: #232323;
+      --bg-card-hover: #292929;
+      --bg-input: #161616;
+      
+      --border: #2c2c2c;
+      --border-light: #242424;
+      
+      --text-main: #ffffff;
+      --text-sub: #a6a6a6;
+      --text-muted: #6e6e6e;
+      
+      --accent-green: #00c471;
+      --accent-green-hover: #00b065;
+      --accent-red: #ff4d4f;
+      --accent-orange: #ffa000;
+      --accent-blue: #1890ff;
     }
+
     * { box-sizing: border-box; margin: 0; padding: 0; }
+    
     body {
-      background: var(--bg);
-      color: var(--text);
+      background: var(--bg-base);
+      color: var(--text-main);
       font-family: -apple-system, BlinkMacSystemFont, "Pretendard", "Segoe UI", Roboto, "Noto Sans KR", sans-serif;
       line-height: 1.5;
       -webkit-font-smoothing: antialiased;
+      padding-bottom: 60px;
     }
+
+    /* Header */
     header {
-      position: sticky;
-      top: 0;
-      z-index: 100;
-      background: rgba(255, 255, 255, 0.88);
-      backdrop-filter: blur(16px);
+      background: var(--bg-base);
       border-bottom: 1px solid var(--border);
-      padding: 14px 28px;
+      padding: 16px 40px;
       display: flex;
       align-items: center;
       justify-content: space-between;
+      gap: 16px;
       flex-wrap: wrap;
-      gap: 12px;
-      box-shadow: var(--shadow-sm);
     }
-    .header-title { display: flex; align-items: center; gap: 10px; }
-    .header-title h1 { font-size: 18px; font-weight: 700; letter-spacing: -0.4px; color: var(--text); }
-    .header-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+    .brand-group {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .brand-icon {
+      width: 32px;
+      height: 32px;
+      border-radius: 9px;
+      background: var(--accent-green);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #121212;
+      font-weight: 900;
+      font-size: 16px;
+    }
+
+    .brand-title {
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: -0.4px;
+      color: var(--text-main);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .brand-version {
+      font-size: 11px;
+      font-weight: 700;
+      background: var(--bg-card);
+      color: var(--text-sub);
+      padding: 3px 8px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
     .btn {
       display: inline-flex;
       align-items: center;
       gap: 6px;
-      padding: 8px 16px;
+      padding: 9px 18px;
       border-radius: 8px;
       font-size: 13px;
       font-weight: 600;
       cursor: pointer;
       transition: all .15s ease;
       border: 1px solid var(--border);
-      background: #fff;
-      color: var(--text-sub);
-      box-shadow: var(--shadow-sm);
+      background: var(--bg-surface);
+      color: var(--text-main);
       outline: none;
+      user-select: none;
     }
-    .btn:hover { background: #f8fafc; color: var(--text); border-color: #cbd5e1; }
+
+    .btn:hover {
+      background: var(--bg-card-hover);
+      border-color: #3e3e3e;
+    }
+
     .btn:active { transform: scale(0.97); }
-    .btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
-    .btn-primary { background: var(--primary); color: #fff; border-color: transparent; }
-    .btn-primary:hover { background: #059669; color: #fff; }
-    .btn-danger { background: var(--danger); color: #fff; border-color: transparent; }
-    .btn-danger:hover { background: #dc2626; color: #fff; }
-    .main-container { max-width: 1440px; margin: 24px auto; padding: 0 24px; display: flex; flex-direction: column; gap: 20px; }
-    .panel {
-      background: var(--card);
+    .btn:disabled { opacity: 0.35; cursor: not-allowed; transform: none; }
+
+    .btn-green {
+      background: var(--accent-green);
+      color: #121212;
+      border-color: transparent;
+      font-weight: 700;
+    }
+    .btn-green:hover { background: var(--accent-green-hover); color: #121212; }
+
+    .btn-red {
+      background: var(--accent-red);
+      color: #ffffff;
+      border-color: transparent;
+      font-weight: 700;
+    }
+    .btn-red:hover { background: #f5222d; color: #fff; }
+
+    /* Layout Container */
+    .main-container {
+      max-width: 1400px;
+      margin: 28px auto 0;
+      padding: 0 40px;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    /* Top KPI 3-Column Summary Cards */
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+    }
+
+    @media (max-width: 900px) {
+      .summary-grid { grid-template-columns: 1fr; }
+    }
+
+    .summary-card {
+      background: var(--bg-surface);
       border: 1px solid var(--border);
       border-radius: 14px;
       padding: 20px 24px;
-      box-shadow: var(--shadow);
-      transition: box-shadow .2s;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
     }
-    .panel:hover { box-shadow: var(--shadow-lg); }
+
+    .summary-label {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-sub);
+    }
+
+    .summary-value {
+      font-size: 36px;
+      font-weight: 800;
+      letter-spacing: -1px;
+      color: var(--text-main);
+      font-variant-numeric: tabular-nums;
+      line-height: 1.2;
+    }
+
+    .summary-desc {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: 4px;
+    }
+
+    /* Full-width Panels */
+    .panel {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 22px 26px;
+    }
+
     .panel-header {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      margin-bottom: 16px;
-      padding-bottom: 12px;
+      margin-bottom: 18px;
+      padding-bottom: 14px;
       border-bottom: 1px solid var(--border-light);
     }
-    .panel-title { font-size: 16px; font-weight: 700; color: var(--text); display: flex; align-items: center; gap: 8px; }
-    .panel-badge { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: var(--border-light); color: var(--text-sub); }
-    .grid-kpi { display: grid; grid-template-columns: repeat(auto-fit, minmax(155px, 1fr)); gap: 14px; }
-    .kpi-card {
-      background: var(--bg);
-      border: 1px solid var(--border);
+
+    .panel-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text-main);
+      letter-spacing: -0.3px;
+    }
+
+    .panel-subinfo {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    /* Sub KPI 4-Column Row */
+    .sub-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+    }
+
+    @media (max-width: 1000px) {
+      .sub-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+
+    .sub-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-light);
       border-radius: 10px;
-      padding: 14px;
+      padding: 14px 16px;
       display: flex;
       flex-direction: column;
       gap: 4px;
-      transition: all .15s;
     }
-    .kpi-card:hover { background: #fff; border-color: #cbd5e1; transform: translateY(-2px); box-shadow: var(--shadow-sm); }
-    .kpi-label { font-size: 12px; font-weight: 600; color: var(--text-sub); }
-    .kpi-value { font-size: 22px; font-weight: 800; letter-spacing: -0.5px; color: var(--text); word-break: break-all; }
-    .ok { color: var(--primary-dark) !important; }
-    .warn { color: var(--warn-dark) !important; }
-    .error { color: var(--danger-dark) !important; }
-    .info { color: var(--info-dark) !important; }
-    .badge { display: inline-block; padding: 3px 8px; border-radius: 6px; font-size: 12px; font-weight: 600; letter-spacing: -0.2px; }
-    .badge-ok { background: var(--primary-light); color: var(--primary-dark); }
-    .badge-warn { background: var(--warn-light); color: var(--warn-dark); }
-    .badge-error { background: var(--danger-light); color: var(--danger-dark); }
-    .badge-info { background: var(--info-light); color: var(--info-dark); }
-    .badge-muted { background: var(--border-light); color: var(--text-sub); }
-    .table-wrapper { overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; background: #fff; }
-    table { width: 100%; border-collapse: collapse; text-align: left; font-size: 13px; }
-    th { background: var(--bg); color: var(--text-sub); font-weight: 600; font-size: 12px; padding: 12px 16px; border-bottom: 1px solid var(--border); white-space: nowrap; }
-    td { padding: 12px 16px; border-bottom: 1px solid var(--border-light); color: var(--text); vertical-align: middle; }
+
+    .sub-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-muted);
+    }
+
+    .sub-value {
+      font-size: 22px;
+      font-weight: 800;
+      color: var(--text-main);
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* Value colors */
+    .val-green { color: var(--accent-green) !important; }
+    .val-red { color: var(--accent-red) !important; }
+    .val-orange { color: var(--accent-orange) !important; }
+
+    /* Badges / Pills */
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 10px;
+      border-radius: 20px;
+      font-size: 11.5px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .pill-green { background: var(--accent-green); color: #121212; }
+    .pill-red { background: var(--accent-red); color: #ffffff; }
+    .pill-orange { background: var(--accent-orange); color: #121212; }
+    .pill-dark { background: var(--bg-card); color: var(--text-sub); border: 1px solid var(--border); }
+
+    /* Tables (Clean & Spacious) */
+    .table-box {
+      width: 100%;
+      overflow-x: auto;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--bg-card);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 13px;
+    }
+
+    th {
+      background: var(--bg-surface);
+      color: var(--text-muted);
+      font-weight: 600;
+      font-size: 12px;
+      padding: 14px 20px;
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+    }
+
+    td {
+      padding: 14px 20px;
+      border-bottom: 1px solid var(--border-light);
+      color: var(--text-sub);
+      vertical-align: middle;
+      white-space: nowrap;
+    }
+
     tr:last-child td { border-bottom: none; }
-    tr:hover td { background: rgba(248, 250, 252, 0.8); }
-    code { font-family: "JetBrains Mono", Consolas, monospace; background: #f1f5f9; color: #334155; padding: 2px 6px; border-radius: 4px; font-size: 12px; }
-    .log-console { height: 280px; overflow: auto; background: #0f172a; color: #e2e8f0; padding: 14px; border-radius: 10px; font-family: "JetBrains Mono", Consolas, monospace; font-size: 12px; line-height: 1.6; white-space: pre-wrap; }
-    .log-line { margin-bottom: 2px; }
-    .log-line.error { color: #f87171; }
-    .log-line.warn { color: #fbbf24; }
-    .log-line.info { color: #93c5fd; }
-    .json-box { width: 100%; height: 220px; background: var(--bg); color: #334155; border: 1px solid var(--border); border-radius: 10px; padding: 14px; font-family: "JetBrains Mono", Consolas, monospace; font-size: 12px; line-height: 1.5; resize: vertical; }
-    .empty-msg { padding: 24px; text-align: center; color: var(--text-muted); font-size: 13px; }
-    .pulse-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--primary); box-shadow: 0 0 8px var(--primary); }
-    .pulse-dot.recording { background: var(--danger); box-shadow: 0 0 8px var(--danger); animation: soopAllRecordPulse 1.2s infinite; }
-    @keyframes soopAllRecordPulse { 0% { transform: scale(0.9); opacity: 0.8; } 50% { transform: scale(1.2); opacity: 1; } 100% { transform: scale(0.9); opacity: 0.8; } }
+    tr:hover td { background: rgba(255, 255, 255, 0.02); color: var(--text-main); }
+
+    code {
+      font-family: "JetBrains Mono", Consolas, monospace;
+      background: var(--bg-input);
+      color: #93c5fd;
+      padding: 3px 7px;
+      border-radius: 5px;
+      font-size: 12px;
+      border: 1px solid var(--border);
+    }
+
+    /* Terminal & Diagnostics */
+    .log-box {
+      height: 240px;
+      overflow-y: auto;
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px 18px;
+      font-family: "JetBrains Mono", Consolas, monospace;
+      font-size: 12px;
+      line-height: 1.65;
+      color: var(--text-sub);
+    }
+
+    .log-row {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 2px;
+      word-break: break-all;
+    }
+
+    .log-t { color: var(--text-muted); flex-shrink: 0; }
+    .log-tag { color: #58a6ff; font-weight: 600; flex-shrink: 0; }
+    .log-m { color: var(--text-main); }
+    .log-row.error .log-m { color: var(--accent-red); font-weight: 600; }
+    .log-row.warn .log-m { color: var(--accent-orange); }
+
+    .json-textarea {
+      width: 100%;
+      height: 160px;
+      background: var(--bg-input);
+      color: var(--text-muted);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px;
+      font-family: "JetBrains Mono", Consolas, monospace;
+      font-size: 12px;
+      line-height: 1.5;
+      resize: vertical;
+      outline: none;
+    }
+
+    .empty-row {
+      padding: 28px;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 13px;
+    }
   </style>
 </head>
 <body>
   <header>
-    <div class="header-title">
-      <span class="pulse-dot" id="headerDot"></span>
-      <h1>SOOP 원본 녹화 · 상세 모니터링</h1>
-      <span class="badge badge-info">Direct-to-Disk</span>
+    <div class="brand-group">
+      <div class="brand-icon">S</div>
+      <div class="brand-title">
+        <span>SOOP 원본 녹화 대시보드</span>
+        <span class="brand-version" id="engineVersion">v4.0</span>
+      </div>
     </div>
     <div class="header-actions">
-      <button class="btn" id="refresh">새로고침</button>
-      <button class="btn btn-primary" id="start" disabled>녹화 시작 · 폴더 선택</button>
-      <button class="btn btn-danger" id="stop" disabled>녹화 중지</button>
-      <button class="btn" id="copy">진단 JSON 복사</button>
+      <button class="btn" id="refreshBtn">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+        새로고침
+      </button>
+      <button class="btn btn-green" id="startBtn" disabled>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/></svg>
+        녹화 시작 · 폴더 선택
+      </button>
+      <button class="btn btn-red" id="stopBtn" disabled>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+        녹화 중지
+      </button>
+      <button class="btn" id="copyJsonBtn">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        진단 JSON 복사
+      </button>
     </div>
   </header>
+
   <main class="main-container">
-    <section class="panel">
-      <div class="panel-header">
-        <div class="panel-title"><span>📊</span> 현재 녹화 상태</div>
-        <span class="panel-badge" id="liveStateBadge">연결 대기</span>
+    <!-- Top 3-Card Summary Grid (LiveDownload Style) -->
+    <div class="summary-grid">
+      <div class="summary-card">
+        <div class="summary-label">녹화 상태</div>
+        <div class="summary-value" id="kpiStatus">-</div>
+        <div class="summary-desc" id="kpiStatusDesc">스트림 감지 대기 중</div>
       </div>
-      <div id="status" class="grid-kpi"></div>
-    </section>
-
-    <section class="panel">
-      <div class="panel-header">
-        <div class="panel-title"><span>🛡️</span> 조각 무결성 모니터링</div>
+      <div class="summary-card">
+        <div class="summary-label">녹화 시간 및 용량</div>
+        <div class="summary-value" id="kpiTime">00:00</div>
+        <div class="summary-desc" id="kpiSizeDesc">누적 저장: 0 MiB</div>
       </div>
-      <div id="fragments" class="grid-kpi"></div>
-      <div id="missing" style="margin-top:14px;padding:12px 14px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;font-size:13px;color:#334155;"></div>
-    </section>
-
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(500px,1fr));gap:20px">
-      <section class="panel">
-        <div class="panel-header">
-          <div class="panel-title"><span>🎬</span> 녹화 Part 목록</div>
-        </div>
-        <div class="table-wrapper">
-          <table>
-            <thead><tr><th>Part</th><th>사유</th><th>화질</th><th>Gen</th><th>저장율</th><th>상태</th><th>파일명</th></tr></thead>
-            <tbody id="parts"></tbody>
-          </table>
-        </div>
-      </section>
-
-      <section class="panel">
-        <div class="panel-header">
-          <div class="panel-title"><span>📡</span> 활성 트랙 버퍼</div>
-        </div>
-        <div class="table-wrapper">
-          <table>
-            <thead><tr><th>ID</th><th>Gen</th><th>타입</th><th>Init 정보</th><th>저장율</th><th>대기</th><th>최근 박스</th></tr></thead>
-            <tbody id="buffers"></tbody>
-          </table>
-        </div>
-      </section>
+      <div class="summary-card">
+        <div class="summary-label">저장 완료 조각 (Chunks)</div>
+        <div class="summary-value" id="kpiChunks">0</div>
+        <div class="summary-desc" id="kpiChunksDesc">누락: 0개 · 큐 대기: 0 MiB</div>
+      </div>
     </div>
 
+    <!-- 미디어 조각 및 파이프라인 지표 (4-Column) -->
     <section class="panel">
       <div class="panel-header">
-        <div class="panel-title"><span>⚡</span> 타임라인 이상 감지</div>
+        <h2 class="panel-title">미디어 청크(Chunk) 파이프라인 지표</h2>
+        <span class="panel-subinfo">Direct-to-Disk 무손실 무재인코딩</span>
       </div>
-      <div id="anomalies"></div>
+      <div class="sub-grid" id="pipelineGrid"></div>
+      <div id="missingReport" style="margin-top:14px;padding:12px 18px;background:var(--bg-card);border:1px solid var(--border-light);border-radius:10px;font-size:13px;"></div>
     </section>
 
+    <!-- 녹화 세그먼트 (Part 목록) - Full Width -->
     <section class="panel">
       <div class="panel-header">
-        <div class="panel-title"><span>📦</span> 최종 생성 파일 및 병합 스크립트</div>
+        <h2 class="panel-title">녹화 파일 세그먼트 (Part 목록)</h2>
       </div>
-      <div id="outputs"></div>
+      <div class="table-box">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:10%">Part</th>
+              <th style="width:18%">생성 사유</th>
+              <th style="width:14%">화질/해상도</th>
+              <th style="width:14%">저장율 (청크)</th>
+              <th style="width:12%">상태</th>
+              <th style="width:32%">파일명</th>
+            </tr>
+          </thead>
+          <tbody id="partsTableBody"></tbody>
+        </table>
+      </div>
     </section>
 
+    <!-- 활성 미디어 버퍼 (MSE) - Full Width -->
     <section class="panel">
       <div class="panel-header">
-        <div class="panel-title"><span>📜</span> 실시간 이벤트 로그</div>
+        <h2 class="panel-title">활성 미디어 소스 버퍼 (MSE 트랙)</h2>
       </div>
-      <div id="logs" class="log-console"></div>
+      <div class="table-box">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:8%">트랙</th>
+              <th style="width:24%">MIME / Codecs</th>
+              <th style="width:24%">Init 헤더 메타</th>
+              <th style="width:14%">저장 완료</th>
+              <th style="width:12%">대기 큐</th>
+              <th style="width:18%">최근 패킷 박스</th>
+            </tr>
+          </thead>
+          <tbody id="buffersTableBody"></tbody>
+        </table>
+      </div>
     </section>
 
+    <!-- 타임라인 무결성 & 최종 파일 - Full Width -->
     <section class="panel">
       <div class="panel-header">
-        <div class="panel-title"><span>⚙️</span> 문제 해결용 진단 JSON</div>
+        <h2 class="panel-title">타임라인 무결성 및 완료 파일</h2>
       </div>
-      <textarea id="json" class="json-box" readonly></textarea>
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <div id="anomaliesBox"></div>
+        <div id="outputBox"></div>
+      </div>
+    </section>
+
+    <!-- 실시간 이벤트 콘솔 - Full Width -->
+    <section class="panel">
+      <div class="panel-header">
+        <h2 class="panel-title">실시간 이벤트 콘솔</h2>
+        <span class="panel-subinfo">실시간 파이프라인 이벤트</span>
+      </div>
+      <div id="logTerminal" class="log-box"></div>
+    </section>
+
+    <!-- 진단 JSON 데이터 - Full Width -->
+    <section class="panel">
+      <div class="panel-header">
+        <h2 class="panel-title">진단 데이터 스냅샷 (JSON)</h2>
+      </div>
+      <textarea id="jsonBox" class="json-textarea" readonly></textarea>
     </section>
   </main>
 </body>
@@ -1420,93 +1749,161 @@ ${merge.scriptName}을 실행하면 최종 MP4가 생성됩니다.`,
       D.snap = s;
       const c = s.capture;
       const f = c.fragments;
-      const status = c.rotating ? "Part 전환 중" : c.starting ? "파일 준비 중" : c.stopping ? "파일 마무리 중" : c.recording ? "녹화 중" : c.canStart ? "시작 가능" : "스트림 준비 중";
-      const statusBadgeClass = c.error ? "badge-error" : c.recording ? "badge-error" : c.canStart ? "badge-ok" : "badge-warn";
-      const statusTextClass = c.error ? "error" : c.recording ? "error" : c.canStart ? "ok" : "warn";
-      $("#start").disabled = !c.canStart;
-      $("#start").textContent = c.canStart ? "녹화 시작 · 폴더 선택" : "시작 준비 중";
-      $("#stop").disabled = !c.recording;
-      const dot = $("#headerDot");
-      if (dot) {
-        dot.className = c.recording ? "pulse-dot recording" : "pulse-dot";
-        dot.style.background = c.recording ? "#ef4444" : c.canStart ? "#10b981" : "#94a3b8";
+      const isReady = c.canStart && !c.recording && !c.starting && !c.stopping;
+      const stateTitle = c.rotating ? "Part 교체 중" : c.starting ? "파일 생성 중" : c.stopping ? "파일 마무리 중" : c.recording ? "녹화 진행 중" : isReady ? c.completedAt ? "저장 완료 (새 녹화 대기)" : "녹화 준비 완료" : "스트림 감지 대기";
+      const stateColorClass = c.error ? "val-red" : c.recording ? "val-red" : isReady ? "val-green" : "val-orange";
+      const startBtn2 = $("#startBtn");
+      if (startBtn2) {
+        startBtn2.disabled = !isReady;
+        startBtn2.textContent = isReady ? "녹화 시작 · 폴더 선택" : c.recording ? "녹화 진행 중" : "스트림 대기 중";
       }
-      $("#liveStateBadge").className = `badge ${statusBadgeClass}`;
-      $("#liveStateBadge").textContent = status;
-      $("#status").innerHTML = `
-      <div class="kpi-card"><div class="kpi-label">녹화 상태</div><div class="kpi-value ${statusTextClass}">${esc(status)}</div></div>
-      <div class="kpi-card"><div class="kpi-label">녹화 시간</div><div class="kpi-value">${Math.floor(c.elapsedSeconds / 60)}분 ${c.elapsedSeconds % 60}초</div></div>
-      <div class="kpi-card"><div class="kpi-label">저장 용량</div><div class="kpi-value">${c.sizeMiB} <span style="font-size:14px;color:var(--text-sub)">MiB</span></div></div>
-      <div class="kpi-card"><div class="kpi-label">Part 번호</div><div class="kpi-value">${c.partCount}</div></div>
-      <div class="kpi-card"><div class="kpi-label">화질 변경</div><div class="kpi-value">${c.qualityChanges} <span style="font-size:14px;color:var(--text-sub)">회</span></div></div>
-      <div class="kpi-card"><div class="kpi-label">플레이어 재연결</div><div class="kpi-value">${c.reconnects} <span style="font-size:14px;color:var(--text-sub)">회</span></div></div>
-      <div class="kpi-card"><div class="kpi-label">디스크 쓰기 대기</div><div class="kpi-value ${c.pendingMiB > 128 ? "warn" : "ok"}">${c.pendingMiB} <span style="font-size:14px;color:var(--text-sub)">MiB</span></div></div>
-      <div class="kpi-card"><div class="kpi-label">오류 상태</div><div class="kpi-value ${c.error ? "error" : "ok"}" style="font-size:15px">${esc(c.error || "정상")}</div></div>`;
-      $("#fragments").innerHTML = `
-      <div class="kpi-card"><div class="kpi-label">관찰된 조각</div><div class="kpi-value">${f.observed}</div></div>
-      <div class="kpi-card"><div class="kpi-label">저장 대상</div><div class="kpi-value">${f.queued}</div></div>
-      <div class="kpi-card"><div class="kpi-label">디스크 저장 완료</div><div class="kpi-value ${f.written === f.queued && !c.recording ? "ok" : ""}">${f.written}</div></div>
-      <div class="kpi-card"><div class="kpi-label">쓰기 실패</div><div class="kpi-value ${f.failed ? "error" : "ok"}">${f.failed}</div></div>
-      <div class="kpi-card"><div class="kpi-label">확정 누락</div><div class="kpi-value ${f.missingCount ? "error" : "ok"}">${f.missingCount}</div></div>
-      <div class="kpi-card"><div class="kpi-label">중복 / 지연 도착</div><div class="kpi-value">${f.duplicates} / ${f.late}</div></div>`;
-      $("#missing").innerHTML = `
-      <div style="display:flex;flex-direction:column;gap:6px">
-        <div><b style="color:var(--danger-dark)">누락 확정 번호:</b> <code>${esc(f.missingConfirmed.join(", ") || "없음 (완벽)")}</code></div>
-        <div><b style="color:var(--warn-dark)">판정 대기 번호:</b> <code>${esc(f.missingPending.join(", ") || "없음")}</code></div>
-      </div>`;
-      const reason = {
+      const stopBtn2 = $("#stopBtn");
+      if (stopBtn2) {
+        stopBtn2.disabled = !c.recording || c.stopping;
+      }
+      const engineVersion = $("#engineVersion");
+      if (engineVersion && s.version) {
+        engineVersion.textContent = `v${s.version}`;
+      }
+      const elapsedMins = String(Math.floor(c.elapsedSeconds / 60)).padStart(2, "0");
+      const elapsedSecs = String(c.elapsedSeconds % 60).padStart(2, "0");
+      const kpiStatus = $("#kpiStatus");
+      if (kpiStatus) {
+        kpiStatus.className = `summary-value ${stateColorClass}`;
+        kpiStatus.textContent = stateTitle;
+      }
+      const kpiStatusDesc = $("#kpiStatusDesc");
+      if (kpiStatusDesc) {
+        kpiStatusDesc.textContent = c.recording ? `Part ${c.partCount} 녹화 진행 중 · 오류 없음` : isReady ? c.completedAt ? `이전 녹화 저장 완료 (${c.sizeMiB} MiB) · 다음 녹화 가능` : "스트림 준비 완료 · 언제든 녹화 시작 가능" : "SOOP 플레이어 스트림 연결 대기 중";
+      }
+      const kpiTime = $("#kpiTime");
+      if (kpiTime) {
+        kpiTime.textContent = `${elapsedMins}:${elapsedSecs}`;
+      }
+      const kpiSizeDesc = $("#kpiSizeDesc");
+      if (kpiSizeDesc) {
+        kpiSizeDesc.textContent = `누적 저장: ${c.sizeMiB} MiB (Part ${c.partCount})`;
+      }
+      const kpiChunks = $("#kpiChunks");
+      if (kpiChunks) {
+        kpiChunks.className = `summary-value ${f.written > 0 ? "val-green" : ""}`;
+        kpiChunks.textContent = `${f.written} / ${f.queued}`;
+      }
+      const kpiChunksDesc = $("#kpiChunksDesc");
+      if (kpiChunksDesc) {
+        kpiChunksDesc.textContent = `누락 확정: ${f.missingCount}개 · 디스크 대기 큐: ${c.pendingMiB} MiB`;
+      }
+      const pipelineGrid = $("#pipelineGrid");
+      if (pipelineGrid) {
+        pipelineGrid.innerHTML = `
+        <div class="sub-card">
+          <div class="sub-label">관찰된 세그먼트 청크</div>
+          <div class="sub-value">${f.observed}</div>
+        </div>
+        <div class="sub-card">
+          <div class="sub-label">디스크 쓰기 대기 큐</div>
+          <div class="sub-value ${c.pendingMiB > 128 ? "val-orange" : ""}">${c.pendingMiB} <span style="font-size:13px;color:var(--text-muted)">MiB</span></div>
+        </div>
+        <div class="sub-card">
+          <div class="sub-label">화질 변경 횟수</div>
+          <div class="sub-value">${c.qualityChanges} <span style="font-size:13px;color:var(--text-muted)">회</span></div>
+        </div>
+        <div class="sub-card">
+          <div class="sub-label">플레이어 재연결</div>
+          <div class="sub-value">${c.reconnects} <span style="font-size:13px;color:var(--text-muted)">회</span></div>
+        </div>`;
+      }
+      const missingReport = $("#missingReport");
+      if (missingReport) {
+        missingReport.innerHTML = `
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
+          <div style="display:flex;align-items:center;gap:10px">
+            <span style="color:var(--accent-red);font-weight:700;min-width:110px">확정 누락 번호:</span>
+            <code>${esc(f.missingConfirmed.join(", ") || "누락 없음 (완벽 수신)")}</code>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <span style="color:var(--accent-orange);font-weight:700;min-width:110px">판정 대기 번호:</span>
+            <code>${esc(f.missingPending.join(", ") || "대기 항목 없음")}</code>
+          </div>
+        </div>`;
+      }
+      const reasonMap = {
         "user-start": "사용자 시작",
         "quality-change": "화질·코덱 변경",
         reconnect: "플레이어 재연결"
       };
-      $("#parts").innerHTML = s.parts.map(
-        (p) => `
-      <tr>
-        <td><span class="badge badge-info">Part ${p.number}</span></td>
-        <td>${esc(reason[p.reason] || p.reason)}</td>
-        <td><span class="badge badge-muted">${esc(p.label)}</span></td>
-        <td>${p.generation}</td>
-        <td><span class="badge ${p.writtenChunks === p.chunks ? "badge-ok" : "badge-warn"}">${p.writtenChunks}/${p.chunks}</span></td>
-        <td><span class="badge ${p.status === "closed" ? "badge-ok" : "badge-error"}">${esc(p.status)}</span></td>
-        <td style="font-size:12px;color:var(--text-sub)">${p.files.map((x) => esc(x.name)).join("<br>")}</td>
-      </tr>`
-      ).join("") || '<tr><td colspan="7" class="empty-msg">아직 기록된 Part가 없습니다.</td></tr>';
-      $("#buffers").innerHTML = s.buffers.map(
-        (r) => {
-          var _a;
-          return `
-      <tr>
-        <td><b>#${r.id}</b></td>
-        <td>${r.generation}</td>
-        <td><span class="badge badge-muted">${esc(r.mime)}</span></td>
-        <td class="${r.initReady ? "ok" : "warn"}">${r.firstBox} ${r.initBytes}B<br><small style="color:var(--text-sub)">${esc(((_a = r.initMeta) == null ? void 0 : _a.label) || "")}</small></td>
-        <td><span class="badge ${r.writtenChunks === r.sessionChunks ? "badge-ok" : "badge-warn"}">${r.writtenChunks}/${r.sessionChunks}</span></td>
-        <td>${r.pendingWrites}</td>
-        <td><code>${esc(r.lastBoxes.map((b) => b.type).join(","))}</code></td>
-      </tr>`;
-        }
-      ).join("") || '<tr><td colspan="7" class="empty-msg">연결된 트랙 버퍼가 없습니다.</td></tr>';
-      $("#anomalies").innerHTML = f.discontinuities.length ? f.discontinuities.map(
-        (x) => `
-      <div style="padding:10px 14px;background:var(--warn-light);border:1px solid #fed7aa;border-radius:8px;color:var(--warn-dark);font-size:13px;margin-bottom:6px">
-        Track ${x.trackId} · ${esc(x.type)} · seq ${x.sequence ?? "-"} · ${esc(JSON.stringify(x))}
-      </div>`
-      ).join("") : '<div style="padding:12px;background:var(--primary-light);border:1px solid #a7f3d0;border-radius:8px;color:var(--primary-dark);font-size:13px;font-weight:600">✓ 타임라인 이상이 감지되지 않았습니다. 원본 스트림이 매우 안정적입니다.</div>';
-      $("#outputs").innerHTML = c.mergeScript ? `
-      <div style="padding:14px;background:#f8fafc;border:1px solid var(--border);border-radius:10px;font-size:13px">
-        <div style="margin-bottom:8px;font-weight:700;color:var(--primary-dark)">✓ 녹화 및 파일 쓰기가 완료되었습니다!</div>
-        <div style="margin-bottom:4px"><b>무손실 병합 스크립트:</b> <code>${esc(c.mergeScript)}</code></div>
-        <div><b>완성 파일:</b> <code>${esc(c.mergedFilename)}</code></div>
-      </div>` : `<div style="color:var(--text-muted);font-size:13px">녹화 중지 후 Part별 무손실 병합 스크립트(.bat)와 녹화정보 JSON이 자동 생성됩니다.</div>`;
+      const partsTableBody = $("#partsTableBody");
+      if (partsTableBody) {
+        partsTableBody.innerHTML = s.parts.map(
+          (p) => `
+        <tr>
+          <td><span class="pill pill-green">Part ${p.number}</span></td>
+          <td>${esc(reasonMap[p.reason] || p.reason)}</td>
+          <td><span class="pill pill-dark">${esc(p.label || "자동 감지")}</span></td>
+          <td><span class="pill ${p.writtenChunks === p.chunks ? "pill-green" : "pill-orange"}">${p.writtenChunks}/${p.chunks}</span></td>
+          <td><span class="pill ${p.status === "closed" ? "pill-dark" : "pill-red"}">${esc(p.status)}</span></td>
+          <td><div style="word-break:break-all;white-space:normal;color:var(--text-sub)">${p.files.map((x) => esc(x.name)).join("<br>")}</div></td>
+        </tr>`
+        ).join("") || '<tr><td colspan="6" class="empty-row">기록된 세그먼트가 없습니다.</td></tr>';
+      }
+      const buffersTableBody = $("#buffersTableBody");
+      if (buffersTableBody) {
+        buffersTableBody.innerHTML = s.buffers.map(
+          (r) => {
+            var _a;
+            return `
+        <tr>
+          <td><b>#${r.id}</b></td>
+          <td><code>${esc(r.mime)}</code></td>
+          <td>
+            <span class="${r.initReady ? "val-green" : "val-orange"}" style="font-weight:700">${r.firstBox} (${r.initBytes} B)</span>
+            ${((_a = r.initMeta) == null ? void 0 : _a.label) ? `<div style="font-size:11px;color:var(--text-muted);margin-top:2px">${esc(r.initMeta.label)}</div>` : ""}
+          </td>
+          <td><span class="pill ${r.writtenChunks === r.sessionChunks ? "pill-green" : "pill-orange"}">${r.writtenChunks}/${r.sessionChunks}</span></td>
+          <td>${r.pendingWrites}</td>
+          <td><code>${esc(r.lastBoxes.map((b) => b.type).join(","))}</code></td>
+        </tr>`;
+          }
+        ).join("") || '<tr><td colspan="6" class="empty-row">연결된 MSE 소스 버퍼가 없습니다.</td></tr>';
+      }
+      const anomaliesBox = $("#anomaliesBox");
+      if (anomaliesBox) {
+        anomaliesBox.innerHTML = f.discontinuities.length ? f.discontinuities.map(
+          (x) => `
+          <div style="padding:12px 18px;background:rgba(255,160,0,0.15);border:1px solid var(--accent-orange);border-radius:10px;color:var(--accent-orange);font-size:13px">
+            Track ${x.trackId} · ${esc(x.type)} · seq ${x.sequence ?? "-"}
+          </div>`
+        ).join("") : '<div style="padding:14px 18px;background:var(--bg-card);border:1px solid var(--border);border-radius:10px;color:var(--accent-green);font-size:13px;font-weight:700">✓ 타임라인 불연속(이상 감지) 없음 · 원본 스트림 안정 수신 중</div>';
+      }
+      const outputBox = $("#outputBox");
+      if (outputBox) {
+        outputBox.innerHTML = c.mergeScript ? `
+        <div style="padding:14px 18px;background:var(--bg-card);border:1px solid var(--border);border-radius:10px;font-size:13px">
+          <div style="margin-bottom:6px;font-weight:700;color:var(--accent-green)">무손실 파일 저장 완료</div>
+          <div style="margin-bottom:4px"><b>병합 스크립트:</b> <code>${esc(c.mergeScript)}</code></div>
+          <div><b>최종 완성 파일:</b> <code>${esc(c.mergedFilename)}</code></div>
+        </div>` : `<div style="color:var(--text-muted);font-size:13px;padding:14px 18px;background:var(--bg-card);border:1px solid var(--border);border-radius:10px">녹화 중지 시 무손실 병합 스크립트(.bat)와 메타데이터 JSON이 디스크에 자동 생성됩니다.</div>`;
+      }
       D.logs = s.logs.slice(-100);
       renderLogs();
-      $("#json").value = JSON.stringify(diag(), null, 2);
+      const jsonBox = $("#jsonBox");
+      if (jsonBox) {
+        jsonBox.value = JSON.stringify(diag(), null, 2);
+      }
     }
     function renderLogs() {
-      const e = $("#logs");
-      e.innerHTML = D.logs.map(
-        (x) => `<div class="log-line ${x.level}">[${esc(x.time.split("T")[1].slice(0, 8))}] [${esc(x.type)}] ${esc(x.message)} ${x.data ? esc(JSON.stringify(x.data)) : ""}</div>`
-      ).join("");
+      const e = $("#logTerminal");
+      if (!e) return;
+      e.innerHTML = D.logs.map((x) => {
+        var _a;
+        const timeStr = x.time ? (_a = x.time.split("T")[1]) == null ? void 0 : _a.slice(0, 8) : "";
+        const levelClass = x.level === "error" ? "error" : x.level === "warn" ? "warn" : "";
+        return `<div class="log-row ${levelClass}">
+          <span class="log-t">[${esc(timeStr)}]</span>
+          <span class="log-tag">[${esc(x.type)}]</span>
+          <span class="log-m">${esc(x.message)} ${x.data ? esc(JSON.stringify(x.data)) : ""}</span>
+        </div>`;
+      }).join("");
       e.scrollTop = e.scrollHeight;
     }
     bus2.addEventListener("message", (e) => {
@@ -1525,37 +1922,51 @@ ${merge.scriptName}을 실행하면 최종 MP4가 생성됩니다.`,
         alert(m.error);
       }
     });
-    $("#refresh").onclick = () => cmd("snapshot");
-    $("#start").onclick = async () => {
-      try {
-        if (!page.showDirectoryPicker) {
-          throw new Error("File System Access API 미지원");
+    const refreshBtn = $("#refreshBtn");
+    if (refreshBtn) refreshBtn.onclick = () => cmd("snapshot");
+    const startBtn = $("#startBtn");
+    if (startBtn) {
+      startBtn.onclick = async () => {
+        try {
+          if (!page.showDirectoryPicker) {
+            throw new Error("File System Access API 미지원");
+          }
+          const directoryHandle = await page.showDirectoryPicker({
+            mode: "readwrite",
+            id: "soop-all-record"
+          });
+          cmd("start", { directoryHandle });
+        } catch (e) {
+          if ((e == null ? void 0 : e.name) !== "AbortError") {
+            alert((e == null ? void 0 : e.message) || e);
+          }
         }
-        const directoryHandle = await page.showDirectoryPicker({
-          mode: "readwrite",
-          id: "soop-all-record"
-        });
-        cmd("start", { directoryHandle });
-      } catch (e) {
-        if ((e == null ? void 0 : e.name) !== "AbortError") {
-          alert((e == null ? void 0 : e.message) || e);
+      };
+    }
+    const stopBtn = $("#stopBtn");
+    if (stopBtn) stopBtn.onclick = () => cmd("stop");
+    const copyJsonBtn = $("#copyJsonBtn");
+    if (copyJsonBtn) {
+      copyJsonBtn.onclick = async () => {
+        const t = JSON.stringify(diag(), null, 2);
+        try {
+          await navigator.clipboard.writeText(t);
+        } catch (_) {
+          const box = $("#jsonBox");
+          if (box) {
+            box.select();
+            document.execCommand("copy");
+          }
         }
-      }
-    };
-    $("#stop").onclick = () => cmd("stop");
-    $("#copy").onclick = async () => {
-      const t = JSON.stringify(diag(), null, 2);
-      try {
-        await navigator.clipboard.writeText(t);
-      } catch (_) {
-        $("#json").select();
-        document.execCommand("copy");
-      }
-      alert("진단 JSON 데이터가 클립보드에 복사되었습니다.");
-    };
+        alert("진단 JSON 데이터가 클립보드에 복사되었습니다.");
+      };
+    }
     cmd("snapshot");
-    setTimeout(() => cmd("snapshot"), 500);
-    setTimeout(() => cmd("snapshot"), 1500);
+    setTimeout(() => cmd("snapshot"), 300);
+    setTimeout(() => cmd("snapshot"), 1e3);
+    setInterval(() => {
+      cmd("snapshot");
+    }, 1e3);
   }
   if (debugId) {
     dashboard(debugId);

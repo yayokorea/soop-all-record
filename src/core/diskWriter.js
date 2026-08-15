@@ -25,7 +25,11 @@ export const localStamp = () => {
 };
 
 export const broadcastName = () => clean((document.title || 'SOOP').split('•')[0].trim());
-export const activeRecords = () => [...S.activeByKind.values()].filter(r => r.init);
+export const activeRecords = () => {
+  const active = [...S.activeByKind.values()].filter(r => r.init);
+  if (active.length > 0) return active;
+  return [...S.buffers.values()].filter(r => r.init);
+};
 export const partTag = () => `part${String(S.partNo).padStart(3, '0')}`;
 
 export async function closeActiveWriters() {
@@ -298,7 +302,6 @@ export async function start(dir) {
     throw new Error('아직 초기화 세그먼트가 준비되지 않았습니다.');
   }
   S.starting = true;
-  S.canStart = false;
   S.error = null;
   send();
 
@@ -411,7 +414,6 @@ export async function stop() {
   } finally {
     S.stopping = false;
     S.startedAt = null;
-    readiness();
-    send();
+    readiness(true);
   }
 }

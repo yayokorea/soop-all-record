@@ -64,21 +64,27 @@ export function send() {
   bus.postMessage({ type: 'snapshot', snapshot: snap() });
 }
 
-export function readiness() {
+export function readiness(immediate = false) {
   clearTimeout(S.readyTimer);
-  S.canStart = false;
 
-  S.readyTimer = setTimeout(() => {
-    const rs = [...S.activeByKind.values()];
-    S.canStart = !S.recording && !S.starting && !S.stopping && rs.length > 0 && rs.every(r => r.init);
+  const check = () => {
+    const active = [...S.activeByKind.values()].filter(r => r.init);
+    const allWithInit = [...S.buffers.values()].filter(r => r.init);
+    
     log(
       'info',
       'readiness',
       S.canStart ? '녹화 시작 가능' : '초기화 세그먼트 대기',
-      rs.map(r => ({ id: r.id, mime: r.mime, ready: !!r.init }))
+      { active: active.length, totalWithInit: allWithInit.length, canStart: S.canStart }
     );
     send();
-  }, 750);
+  };
+
+  if (immediate) {
+    check();
+  } else {
+    S.readyTimer = setTimeout(check, 250);
+  }
 }
 
 export function setupMseHooks() {

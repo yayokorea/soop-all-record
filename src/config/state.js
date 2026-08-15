@@ -9,12 +9,22 @@ export const debugId = new URLSearchParams(location.search).get(PARAM);
 export const id = `soop-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 export const bus = new page.BroadcastChannel(id);
 
+export const isCanStart = () => {
+  if (S.recording || S.starting || S.stopping) return false;
+  const activeCount = [...S.activeByKind.values()].filter(r => r.init).length;
+  const bufferCount = [...S.buffers.values()].filter(r => r.init).length;
+  return activeCount > 0 || bufferCount > 0;
+};
+
 export const S = {
   version: typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '4.0.0',
   recording: false,
   starting: false,
   stopping: false,
-  canStart: false,
+  get canStart() {
+    return isCanStart();
+  },
+  set canStart(_) {},
   buffers: new Map(),
   byObject: new WeakMap(),
   nextId: 0,
@@ -82,7 +92,7 @@ export function snap() {
       recording: S.recording,
       starting: S.starting,
       stopping: S.stopping,
-      canStart: S.canStart,
+      canStart: isCanStart(),
       storageMode: 'File System Access API / direct-to-disk',
       memoryLimit: null,
       bytes: S.bytes,

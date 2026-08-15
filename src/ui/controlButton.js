@@ -40,21 +40,25 @@ export async function beginFromUi() {
   }
 }
 
-export function showPopover() {
+export function showPopover(reposition = true) {
   if (!popover) {
     popover = document.createElement('div');
     popover.id = 'soopAllRecordPopover';
     Object.assign(popover.style, {
       position: 'fixed',
       zIndex: '2147483646',
-      width: '310px',
-      padding: '16px 18px',
-      border: '1px solid #e2e8f0',
+      width: '320px',
+      padding: '18px',
       borderRadius: '14px',
-      background: '#ffffff',
-      color: '#1e293b',
+      background: 'rgba(20, 20, 20, 0.96)',
+      backdropFilter: 'blur(20px)',
+      webkitBackdropFilter: 'blur(20px)',
+      border: '1px solid #2e2e2e',
+      color: '#ffffff',
       font: '13px/1.5 -apple-system, BlinkMacSystemFont, "Pretendard", "Segoe UI", Roboto, sans-serif',
-      boxShadow: '0 16px 36px -4px rgba(15, 23, 42, 0.12), 0 4px 12px rgba(0,0,0,0.06)'
+      boxShadow: '0 20px 40px -12px rgba(0, 0, 0, 0.7), 0 0 1px 1px rgba(255, 255, 255, 0.06)',
+      boxSizing: 'border-box',
+      userSelect: 'none'
     });
     document.documentElement.appendChild(popover);
 
@@ -74,70 +78,126 @@ export function showPopover() {
     );
   }
 
-  const rect = controlButton.getBoundingClientRect();
   const stateText = S.stopping
-    ? '파일 마무리 중'
+    ? '저장 마무리 중'
     : S.starting
-      ? '파일 생성 중'
+      ? '녹화 준비 중'
       : S.recording
-        ? '녹화 중'
+        ? '녹화 진행 중'
         : S.canStart
-          ? '녹화 준비 완료'
-          : '스트림 준비 중';
+          ? '녹화 대기 중'
+          : '스트림 감지 중';
 
   const fs = S.fragmentStats;
   const missing = [...fs.missing].filter(([, m]) => m.confirmed).length;
-  const summary = S.recording
-    ? `● ${Math.round((Date.now() - S.startedAt) / 1000)}초 · ${mb(S.bytes)} MiB<br><span style="font-size:12px;color:#64748b">저장 ${fs.written}/${fs.queued} · 누락 ${missing} · Part ${S.parts.length} · 대기 ${mb(S.pendingBytes)} MiB</span>`
-    : S.completedAt
-      ? `저장 ${fs.written}/${fs.queued} · 누락 ${missing} · Part ${S.parts.length}<br><span style="font-size:12px;color:#64748b">${S.mergeScript || ''}</span>`
-      : `영상/음성 초기화 ${[...S.activeByKind.values()].filter(r => r.init).length}/${S.activeByKind.size}`;
+  
+  const elapsed = S.startedAt ? Math.round((Date.now() - S.startedAt) / 1000) : 0;
+  const elapsedMin = Math.floor(elapsed / 60);
+  const elapsedSec = String(elapsed % 60).padStart(2, '0');
 
-  const statusBg = S.recording ? '#fee2e2' : S.canStart ? '#d1fae5' : '#f1f5f9';
-  const statusColor = S.recording ? '#dc2626' : S.canStart ? '#059669' : '#64748b';
+  const summary = S.recording
+    ? `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+         <span style="font-weight:800;font-size:17px;color:#ff4d4f;font-variant-numeric:tabular-nums">${elapsedMin}:${elapsedSec}</span>
+         <span style="font-weight:700;font-size:14px;color:#ffffff">${mb(S.bytes)} <span style="font-size:11px;color:#737373">MiB</span></span>
+       </div>
+       <div style="font-size:11px;color:#b3b3b3;display:grid;grid-template-columns:1fr 1fr;gap:5px;line-height:1.4">
+         <div>저장: <span style="color:#ffffff;font-weight:700">${fs.written}/${fs.queued}</span></div>
+         <div>누락: <span style="color:${missing > 0 ? '#ff4d4f' : '#00c471'};font-weight:700">${missing}</span></div>
+         <div>세그먼트: <span style="color:#ffffff;font-weight:700">Part ${S.parts.length}</span></div>
+         <div>대기 큐: <span style="color:#ffffff;font-weight:700">${mb(S.pendingBytes)} MiB</span></div>
+       </div>`
+    : S.completedAt
+      ? `<div style="font-size:12px;color:#ffffff;margin-bottom:4px">저장 완료: <b>${fs.written}개 청크</b> (Part ${S.parts.length})</div>
+         <div style="font-size:11px;color:#737373;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${S.mergeScript || '병합 스크립트 생성됨'}</div>`
+      : `<div style="font-size:12px;color:#b3b3b3">미디어 트랙 초기화: <b style="color:#00c471">${[...S.activeByKind.values()].filter(r => r.init).length}/${S.activeByKind.size}</b></div>`;
+
+  const statusBg = S.recording
+    ? 'rgba(255, 77, 79, 0.18)'
+    : S.canStart
+      ? 'rgba(0, 196, 113, 0.18)'
+      : 'rgba(255, 160, 0, 0.18)';
+  const statusColor = S.recording
+    ? '#ff4d4f'
+    : S.canStart
+      ? '#00c471'
+      : '#ffa000';
+  const dotColor = S.recording
+    ? '#ff4d4f'
+    : S.canStart
+      ? '#00c471'
+      : '#ffa000';
 
   popover.innerHTML = `
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-      <div style="font-weight:700;font-size:15px;color:#0f172a;display:flex;align-items:center;gap:6px">
-        <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${S.recording ? '#ef4444' : S.canStart ? '#10b981' : '#94a3b8'};"></span>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+      <div style="font-weight:700;font-size:14px;color:#ffffff;display:flex;align-items:center;gap:8px">
+        <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${dotColor};"></span>
         SOOP 원본 녹화
       </div>
-      <span style="font-size:11px;font-weight:600;padding:2px 7px;border-radius:999px;background:${statusBg};color:${statusColor}">${stateText}</span>
+      <span style="font-size:11px;font-weight:700;padding:3px 8px;border-radius:20px;background:${statusBg};color:${statusColor}">${stateText}</span>
     </div>
-    <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px;margin-bottom:12px;font-size:12px;color:#334155">${summary}</div>
-    <div style="color:#64748b;font-size:12px;margin-bottom:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">저장 폴더: <b>${S.directory?.name || '처음 시작할 때 선택'}</b></div>
-    <div style="display:flex;gap:6px;flex-wrap:wrap">
-      <button id="sarPrimary" style="flex:1;padding:8px 12px;border:0;border-radius:8px;background:${S.recording ? '#ef4444' : '#10b981'};color:#fff;font-weight:600;cursor:pointer;font-size:13px;box-shadow:0 2px 6px rgba(0,0,0,0.08)" ${(!S.recording && !S.canStart) || S.starting || S.stopping ? 'disabled' : ''}>${S.recording ? '녹화 중지' : '새 녹화 시작'}</button>
-      <button id="sarFolder" style="padding:8px 10px;border:1px solid #cbd5e1;border-radius:8px;background:#ffffff;color:#334155;font-weight:500;cursor:pointer;font-size:12px" ${S.recording ? 'disabled' : ''}>폴더 변경</button>
-      <button id="sarDebug" style="width:100%;margin-top:4px;padding:7px 10px;border:1px solid #e2e8f0;border-radius:8px;background:#f8fafc;color:#475569;font-weight:500;cursor:pointer;font-size:12px">상세 모니터링 대시보드 열기</button>
+    <div style="background:#1e1e1e;border:1px solid #282828;border-radius:10px;padding:12px 14px;margin-bottom:12px">${summary}</div>
+    <div style="color:#737373;font-size:11.5px;margin-bottom:14px;display:flex;align-items:center;gap:4px;overflow:hidden">
+      <span style="flex-shrink:0;color:#737373">폴더:</span>
+      <span style="font-weight:600;color:#b3b3b3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${S.directory?.name || '시작 시 지정'}">${S.directory?.name || '시작 시 지정'}</span>
+    </div>
+    <div style="display:flex;gap:7px;flex-wrap:wrap">
+      <button id="sarPrimary" style="flex:1;min-width:120px;padding:9px 14px;border:0;border-radius:8px;background:${S.recording ? '#ff4d4f' : '#00c471'};color:${S.recording ? '#ffffff' : '#141414'};font-weight:700;cursor:pointer;font-size:12.5px;transition:opacity .15s" ${(!S.recording && !S.canStart) || S.starting || S.stopping ? 'disabled' : ''}>${S.recording ? '녹화 중지' : '새 녹화 시작'}</button>
+      <button id="sarFolder" style="padding:9px 12px;border:1px solid #2e2e2e;border-radius:8px;background:#1e1e1e;color:#b3b3b3;font-weight:600;cursor:pointer;font-size:12px" ${S.recording ? 'disabled' : ''}>폴더 변경</button>
+      <button id="sarDebug" style="width:100%;margin-top:2px;padding:8px 10px;border:1px solid #282828;border-radius:8px;background:transparent;color:#737373;font-weight:600;cursor:pointer;font-size:11.5px">상세 모니터링 대시보드</button>
     </div>`;
 
-  popover.querySelector('#sarPrimary').onclick = async () => {
-    hidePopover();
-    if (S.recording) {
-      await stop();
-    } else {
-      await beginFromUi();
-    }
-  };
-
-  popover.querySelector('#sarFolder').onclick = async () => {
-    try {
-      const handle = await page.showDirectoryPicker({ mode: 'readwrite', id: 'soop-all-record' });
-      await rememberDirectory(handle);
-      S.directory = handle;
-      toast(`저장 폴더: ${handle.name}`);
-      showPopover();
-    } catch (error) {
-      if (error?.name !== 'AbortError') {
-        toast(friendlyError(error), 'error');
+  const primaryBtn = popover.querySelector('#sarPrimary');
+  if (primaryBtn) {
+    primaryBtn.onclick = async () => {
+      hidePopover();
+      if (S.recording) {
+        await stop();
+      } else {
+        await beginFromUi();
       }
-    }
-  };
+    };
+  }
 
-  popover.querySelector('#sarDebug').onclick = () => openDebug();
-  popover.style.left = `${Math.max(8, Math.min(innerWidth - 320, rect.right - 310))}px`;
-  popover.style.top = `${Math.max(8, rect.top - 230)}px`;
+  const folderBtn = popover.querySelector('#sarFolder');
+  if (folderBtn) {
+    folderBtn.onclick = async () => {
+      try {
+        const handle = await page.showDirectoryPicker({ mode: 'readwrite', id: 'soop-all-record' });
+        await rememberDirectory(handle);
+        S.directory = handle;
+        toast(`저장 폴더: ${handle.name}`);
+        showPopover(false);
+      } catch (error) {
+        if (error?.name !== 'AbortError') {
+          toast(friendlyError(error), 'error');
+        }
+      }
+    };
+  }
+
+  const debugBtn = popover.querySelector('#sarDebug');
+  if (debugBtn) {
+    debugBtn.onclick = () => openDebug();
+  }
+
+  // 위치 재계산은 사용자가 직접 열었거나(reposition = true), 아직 화면에 표시되지 않은 경우에만 수행
+  if (reposition || popover.style.display !== 'block') {
+    const rect = controlButton?.getBoundingClientRect();
+    if (rect) {
+      // 뷰포트 내 안정적인 위치 계산 (화면 아래 기준 고정)
+      const popoverWidth = 320;
+      const popoverHeight = 220;
+      const left = Math.max(12, Math.min(window.innerWidth - popoverWidth - 12, rect.right - popoverWidth));
+      
+      // 컨트롤 바가 내려가더라도 팝오버가 아래로 추락하지 않도록
+      // 뷰포트 하단으로부터의 거리를 기준으로 고정
+      const bottomDistance = Math.max(48, window.innerHeight - rect.top + 8);
+      popover.style.left = `${left}px`;
+      popover.style.bottom = `${bottomDistance}px`;
+      popover.style.top = 'auto';
+    }
+  }
+
   popover.style.display = 'block';
 }
 
@@ -149,25 +209,25 @@ export function updateControlButton() {
   const secs = String(elapsed % 60).padStart(2, '0');
 
   if (S.stopping || S.starting) {
-    controlButton.innerHTML = `<span style="display:inline-block;width:16px;height:16px;border:2.5px solid #94a3b8;border-top-color:#10b981;border-radius:50%;animation:soopAllRecordSpin .8s linear infinite;box-sizing:border-box;"></span>`;
-    controlButton.title = S.starting ? '녹화 준비 중...' : '파일 저장 마무리 중...';
+    controlButton.innerHTML = `<span style="display:inline-block;width:16px;height:16px;border:2px solid rgba(255,255,255,0.3);border-top-color:#00c471;border-radius:50%;animation:soopAllRecordSpin .8s linear infinite;box-sizing:border-box;"></span>`;
+    controlButton.title = S.starting ? '녹화 시작 준비 중...' : '파일 저장 마무리 중...';
   } else if (S.recording) {
     controlButton.innerHTML = `
-      <span style="display:inline-flex;align-items:center;gap:6px;padding:3px 8px;background:rgba(239,68,68,0.18);border:1px solid rgba(239,68,68,0.4);border-radius:20px;">
-        <span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#ef4444;box-shadow:0 0 10px #ef4444;animation:soopAllRecordPulse 1.2s ease-in-out infinite;"></span>
-        <span style="font-size:12px;font-weight:700;color:#ff5a67;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;line-height:1;">${mins}:${secs}</span>
+      <span style="display:inline-flex;align-items:center;gap:5px;padding:3px 8px;background:rgba(255,77,79,0.2);border:1px solid rgba(255,77,79,0.5);border-radius:14px;">
+        <span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#ff4d4f;animation:soopAllRecordPulse 1.2s ease-in-out infinite;"></span>
+        <span style="font-size:11.5px;font-weight:700;color:#ff7875;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;line-height:1;font-variant-numeric:tabular-nums;">${mins}:${secs}</span>
       </span>`;
     controlButton.title = `SOOP 원본 녹화 중 · ${mb(S.bytes)} MiB · 좌클릭: 중지 · 우클릭: 상세 정보`;
   } else if (S.canStart) {
     controlButton.innerHTML = `
-      <span style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:50%;background:rgba(16,185,129,0.15);transition:all .2s ease;">
-        <span style="display:inline-block;width:16px;height:16px;border-radius:50%;background:#10b981;box-shadow:0 0 10px rgba(16,185,129,0.85);transition:transform .15s ease-out;"></span>
+      <span style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;">
+        <span style="display:inline-block;width:13px;height:13px;border-radius:50%;background:#00c471;transition:transform .15s ease;"></span>
       </span>`;
     controlButton.title = 'SOOP 원본 녹화 준비 완료 · 좌클릭: 녹화 시작 · 우클릭: 상세 정보';
   } else {
     controlButton.innerHTML = `
-      <span style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:50%;">
-        <span style="display:inline-block;width:16px;height:16px;border-radius:50%;border:2px solid #8e9bad;background:transparent;box-sizing:border-box;"></span>
+      <span style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;">
+        <span style="display:inline-block;width:12px;height:12px;border-radius:50%;border:2px solid #666666;background:transparent;box-sizing:border-box;"></span>
       </span>`;
     controlButton.title = 'SOOP 원본 녹화 초기화 세그먼트 준비 중';
   }
@@ -233,7 +293,7 @@ export function installControlButton() {
     setInterval(() => {
       updateControlButton();
       if (popover?.style.display === 'block') {
-        showPopover();
+        showPopover(false);
       }
     }, 1000);
 
