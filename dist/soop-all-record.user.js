@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SOOP(숲) 라이브 무손실 원본 녹화기
 // @namespace    https://github.com/yayokorea/soop-all-record
-// @version      4.0.2
+// @version      4.0.3
 // @author       Yayo
 // @description  SOOP 라이브 원본 스트림을 File System Access API로 브라우저 메모리 누수 없이 실시간 디스크에 무손실로 저장하고 병합 배치를 생성합니다.
 // @license      MIT
@@ -31,7 +31,7 @@
     return activeCount > 0 || bufferCount > 0;
   };
   const S = {
-    version: "4.0.2",
+    version: "4.0.3",
     recording: false,
     starting: false,
     stopping: false,
@@ -1072,14 +1072,21 @@ ${merge.scriptName}을 실행하면 최종 MP4가 생성됩니다.`,
       folderNameEl.title = name;
     }
     const primaryBtn = popover.querySelector("#sarPrimary");
+    const folderBtn = popover.querySelector("#sarFolder");
     if (primaryBtn) {
       primaryBtn.textContent = S.recording ? "녹화 중지" : "새 녹화 시작";
       primaryBtn.style.background = S.recording ? "#ff4d4f" : "#00c471";
       primaryBtn.style.color = S.recording ? "#ffffff" : "#141414";
       primaryBtn.disabled = !S.recording && !S.canStart || S.starting || S.stopping;
+      if (S.recording) {
+        primaryBtn.style.width = "100%";
+      } else {
+        primaryBtn.style.width = "";
+        primaryBtn.style.flex = "1";
+      }
     }
-    const folderBtn = popover.querySelector("#sarFolder");
     if (folderBtn) {
+      folderBtn.style.display = S.recording ? "none" : "inline-block";
       folderBtn.disabled = S.recording;
     }
   }
@@ -1241,10 +1248,10 @@ ${merge.scriptName}을 실행하면 최종 MP4가 생성됩니다.`,
       button.addEventListener("click", (event) => {
         event.preventDefault();
         event.stopPropagation();
-        if (S.recording || S.starting || S.stopping || !S.canStart) {
-          showPopover();
+        if (popover && popover.style.display === "block") {
+          hidePopover();
         } else {
-          beginFromUi();
+          showPopover(true);
         }
       });
       button.addEventListener("contextmenu", (event) => {

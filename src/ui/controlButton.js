@@ -113,15 +113,23 @@ export function updatePopoverContent() {
   }
 
   const primaryBtn = popover.querySelector('#sarPrimary');
+  const folderBtn = popover.querySelector('#sarFolder');
+
   if (primaryBtn) {
     primaryBtn.textContent = S.recording ? '녹화 중지' : '새 녹화 시작';
     primaryBtn.style.background = S.recording ? '#ff4d4f' : '#00c471';
     primaryBtn.style.color = S.recording ? '#ffffff' : '#141414';
     primaryBtn.disabled = (!S.recording && !S.canStart) || S.starting || S.stopping;
+    if (S.recording) {
+      primaryBtn.style.width = '100%';
+    } else {
+      primaryBtn.style.width = '';
+      primaryBtn.style.flex = '1';
+    }
   }
 
-  const folderBtn = popover.querySelector('#sarFolder');
   if (folderBtn) {
+    folderBtn.style.display = S.recording ? 'none' : 'inline-block';
     folderBtn.disabled = S.recording;
   }
 }
@@ -308,10 +316,10 @@ export function installControlButton() {
     button.addEventListener('click', event => {
       event.preventDefault();
       event.stopPropagation();
-      if (S.recording || S.starting || S.stopping || !S.canStart) {
-        showPopover();
+      if (popover && popover.style.display === 'block') {
+        hidePopover();
       } else {
-        beginFromUi();
+        showPopover(true);
       }
     });
 
