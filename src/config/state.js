@@ -34,6 +34,7 @@ export const S = {
   logs: [],
   error: null,
   readyTimer: 0,
+  rootDirectory: null,
   directory: null,
   stamp: null,
   baseName: null,

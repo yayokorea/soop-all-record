@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SOOP(숲) 라이브 무손실 원본 녹화기
 // @namespace    https://github.com/yayokorea/soop-all-record
-// @version      4.0.3
+// @version      4.1.0
 // @author       Yayo
 // @description  SOOP 라이브 원본 스트림을 File System Access API로 브라우저 메모리 누수 없이 실시간 디스크에 무손실로 저장하고 병합 배치를 생성합니다.
 // @license      MIT
@@ -31,7 +31,7 @@
     return activeCount > 0 || bufferCount > 0;
   };
   const S = {
-    version: "4.0.3",
+    version: "4.1.0",
     recording: false,
     starting: false,
     stopping: false,
@@ -49,6 +49,7 @@
     logs: [],
     error: null,
     readyTimer: 0,
+    rootDirectory: null,
     directory: null,
     stamp: null,
     baseName: null,
@@ -684,9 +685,12 @@
     send();
     const opened = [];
     const stamp = localStamp();
-    S.directory = dir;
+    const baseName = `${broadcastName()}_${stamp}`;
+    const sessionDir = await dir.getDirectoryHandle(baseName, { create: true });
+    S.rootDirectory = dir;
+    S.directory = sessionDir;
     S.stamp = stamp;
-    S.baseName = `${broadcastName()}_${stamp}`;
+    S.baseName = baseName;
     S.mergeScript = null;
     S.mergedFilename = null;
     S.completedAt = null;
@@ -702,7 +706,7 @@
         const suffix = kind(r) === "video" ? "영상" : kind(r) === "audio" ? "음성" : `트랙${r.id}`;
         const label = ((_b = (_a = activeRecords().find((x) => kind(x) === "video")) == null ? void 0 : _a.initMeta) == null ? void 0 : _b.label) || "unknown";
         const name = `${S.baseName}_part001_${label}_${suffix}.${ext(r)}`;
-        const fh = await dir.getFileHandle(name, { create: true });
+        const fh = await sessionDir.getFileHandle(name, { create: true });
         r.writable = await fh.createWritable({ keepExistingData: false });
         r.filename = name;
         r.chain = Promise.resolve();
@@ -1033,7 +1037,7 @@ ${merge.scriptName}을 실행하면 최종 MP4가 생성됩니다.`,
     }
   }
   function updatePopoverContent() {
-    var _a;
+    var _a, _b, _c;
     if (!popover) return;
     const stateText = S.stopping ? "저장 마무리 중" : S.starting ? "녹화 준비 중" : S.recording ? "녹화 진행 중" : S.canStart ? "녹화 대기 중" : "스트림 감지 중";
     const fs = S.fragmentStats;
@@ -1067,7 +1071,7 @@ ${merge.scriptName}을 실행하면 최종 MP4가 생성됩니다.`,
     if (summaryEl) summaryEl.innerHTML = summaryHtml;
     const folderNameEl = popover.querySelector("#sarFolderName");
     if (folderNameEl) {
-      const name = ((_a = S.directory) == null ? void 0 : _a.name) || "시작 시 지정";
+      const name = S.recording ? ((_a = S.directory) == null ? void 0 : _a.name) || "녹화 세션 폴더" : ((_b = S.rootDirectory) == null ? void 0 : _b.name) || ((_c = S.directory) == null ? void 0 : _c.name) || "시작 시 지정";
       folderNameEl.textContent = name;
       folderNameEl.title = name;
     }
@@ -1262,6 +1266,13 @@ ${merge.scriptName}을 실행하면 최종 MP4가 생성됩니다.`,
       right.prepend(button);
       controlButton = button;
       updateControlButton();
+      recalledDirectory().then((dir) => {
+        if (dir && !S.rootDirectory) {
+          S.rootDirectory = dir;
+          updatePopoverContent();
+        }
+      }).catch(() => {
+      });
       setInterval(() => {
         updateControlButton();
         if ((popover == null ? void 0 : popover.style.display) === "block") {

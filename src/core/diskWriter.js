@@ -307,9 +307,15 @@ export async function start(dir) {
 
   const opened = [];
   const stamp = localStamp();
-  S.directory = dir;
+  const baseName = `${broadcastName()}_${stamp}`;
+
+  // 루트 폴더 내에 방송 세션 전용 하위 폴더 자동 생성
+  const sessionDir = await dir.getDirectoryHandle(baseName, { create: true });
+
+  S.rootDirectory = dir;
+  S.directory = sessionDir;
   S.stamp = stamp;
-  S.baseName = `${broadcastName()}_${stamp}`;
+  S.baseName = baseName;
   S.mergeScript = null;
   S.mergedFilename = null;
   S.completedAt = null;
@@ -327,7 +333,7 @@ export async function start(dir) {
       const suffix = kind(r) === 'video' ? '영상' : kind(r) === 'audio' ? '음성' : `트랙${r.id}`;
       const label = activeRecords().find(x => kind(x) === 'video')?.initMeta?.label || 'unknown';
       const name = `${S.baseName}_part001_${label}_${suffix}.${ext(r)}`;
-      const fh = await dir.getFileHandle(name, { create: true });
+      const fh = await sessionDir.getFileHandle(name, { create: true });
       r.writable = await fh.createWritable({ keepExistingData: false });
       r.filename = name;
       r.chain = Promise.resolve();

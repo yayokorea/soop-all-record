@@ -3,7 +3,7 @@
  */
 
 import { page, S, PARAM, id, mb } from '../config/state.js';
-import { chooseDirectory, rememberDirectory, pickNewDirectory } from './storageHelper.js';
+import { chooseDirectory, rememberDirectory, pickNewDirectory, recalledDirectory } from './storageHelper.js';
 import { toast, friendlyError } from './toast.js';
 import { start, stop } from '../core/diskWriter.js';
 import { setControlButtonUpdater } from '../core/mseHook.js';
@@ -107,7 +107,9 @@ export function updatePopoverContent() {
 
   const folderNameEl = popover.querySelector('#sarFolderName');
   if (folderNameEl) {
-    const name = S.directory?.name || '시작 시 지정';
+    const name = S.recording
+      ? (S.directory?.name || '녹화 세션 폴더')
+      : (S.rootDirectory?.name || S.directory?.name || '시작 시 지정');
     folderNameEl.textContent = name;
     folderNameEl.title = name;
   }
@@ -332,6 +334,13 @@ export function installControlButton() {
     right.prepend(button);
     controlButton = button;
     updateControlButton();
+
+    recalledDirectory().then(dir => {
+      if (dir && !S.rootDirectory) {
+        S.rootDirectory = dir;
+        updatePopoverContent();
+      }
+    }).catch(() => {});
 
     setInterval(() => {
       updateControlButton();
