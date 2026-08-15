@@ -1,5 +1,6 @@
 // ==UserScript==
 // @name               SOOP(숲) 라이브 무손실 원본 녹화기
+// @name:ko            SOOP(숲) 라이브 무손실 원본 녹화기
 // @name:en            SOOP Live Lossless Original Stream Recorder
 // @name:ja            SOOP（スプ）ライブ無劣化オリジナル録画ツール
 // @name:zh-TW         SOOP 直播無損原始串流錄製器
@@ -8,9 +9,10 @@
 // @name:vi            Trình ghi livestream SOOP nguyên bản không mất chất lượng
 // @name:id            Perekam Live SOOP Lossless dari Stream Asli
 // @namespace          https://github.com/yayokorea/soop-all-record
-// @version            4.1.4
+// @version            4.1.6
 // @author             Yayo
 // @description        SOOP 라이브 원본 스트림을 디스크에 무손실로 저장합니다.
+// @description:ko     SOOP 라이브 원본 스트림을 디스크에 무손실로 저장합니다.
 // @description:en     Records SOOP live streams directly to disk without re-encoding, preserving the original stream quality.
 // @description:ja     SOOPのライブストリームを再エンコードせず、元の品質のままディスクへ直接保存します。
 // @description:zh-TW  將 SOOP 直播串流直接儲存到磁碟，不重新編碼並保留原始畫質。
@@ -45,7 +47,7 @@
     return activeCount > 0 || bufferCount > 0;
   };
   const S = {
-    version: "4.1.4",
+    version: "4.1.6",
     recording: false,
     starting: false,
     stopping: false,
