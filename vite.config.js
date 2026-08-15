@@ -23,7 +23,7 @@ export default defineConfig({
         namespace: 'https://github.com/yayokorea/soop-all-record',
         version: pkg.version,
         description: {
-          '': 'SOOP 라이브 스트림을 재인코딩 없이 원본 그대로 디스크에 저장하는 녹화기',
+          '': 'SOOP 라이브 원본 스트림을 디스크에 무손실로 저장합니다.',
           en: 'Records SOOP live streams directly to disk without re-encoding, preserving the original stream quality.',
           ja: 'SOOPのライブストリームを再エンコードせず、元の品質のままディスクへ直接保存します。',
           'zh-TW': '將 SOOP 直播串流直接儲存到磁碟，不重新編碼並保留原始畫質。',
