@@ -36,21 +36,9 @@ export const streamerName = () => {
   return clean(nick, '');
 };
 
-export const broadcastTitle = () => {
-  const win = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
-  const title = win.szBroadTitle
-    || win.oBroadInfo?.szBroadTitle
-    || (document.title || 'SOOP').split('•')[0].trim();
-  return clean(title, 'SOOP');
-};
-
 export const broadcastName = () => {
   const streamer = streamerName();
-  const title = broadcastTitle();
-  if (streamer) {
-    return `${streamer}_${title}`;
-  }
-  return title;
+  return streamer || 'SOOP';
 };
 export const activeRecords = () => {
   const active = [...S.activeByKind.values()].filter(r => r.init);

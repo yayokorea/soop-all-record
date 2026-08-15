@@ -9,7 +9,7 @@
 // @name:vi            Trình ghi livestream SOOP nguyên bản không mất chất lượng
 // @name:id            Perekam Live SOOP Lossless dari Stream Asli
 // @namespace          https://github.com/yayokorea/soop-all-record
-// @version            4.1.7
+// @version            4.1.8
 // @author             Yayo
 // @description        SOOP 라이브 원본 스트림을 디스크에 무손실로 저장합니다.
 // @description:ko     SOOP 라이브 원본 스트림을 디스크에 무손실로 저장합니다.
@@ -47,7 +47,7 @@
     return activeCount > 0 || bufferCount > 0;
   };
   const S = {
-    version: "4.1.7",
+    version: "4.1.8",
     recording: false,
     starting: false,
     stopping: false,
@@ -461,19 +461,9 @@
     const nick = win.szBjNick || ((_a = win.oBroadInfo) == null ? void 0 : _a.szBjNick) || ((_b = win.oBroadInfo) == null ? void 0 : _b.bjNick) || ((_c = win.liveInfo) == null ? void 0 : _c.bjNick) || ((_e = (_d = document.querySelector('.streamer_nick, button[report-name="bj_nickname"], .nickname, a.nickname')) == null ? void 0 : _d.textContent) == null ? void 0 : _e.trim()) || ((document.title || "").split("•")[1] || "").replace(/\|\s*SOOP.*/i, "").trim();
     return clean(nick, "");
   };
-  const broadcastTitle = () => {
-    var _a;
-    const win = typeof unsafeWindow !== "undefined" ? unsafeWindow : window;
-    const title = win.szBroadTitle || ((_a = win.oBroadInfo) == null ? void 0 : _a.szBroadTitle) || (document.title || "SOOP").split("•")[0].trim();
-    return clean(title, "SOOP");
-  };
   const broadcastName = () => {
     const streamer = streamerName();
-    const title = broadcastTitle();
-    if (streamer) {
-      return `${streamer}_${title}`;
-    }
-    return title;
+    return streamer || "SOOP";
   };
   const activeRecords = () => {
     const active = [...S.activeByKind.values()].filter((r) => r.init);
