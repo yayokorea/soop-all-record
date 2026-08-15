@@ -3,6 +3,7 @@
  */
 
 import { page } from '../config/state.js';
+import { pickNewDirectory } from './storageHelper.js';
 
 export function dashboard(channelId) {
   try {
@@ -779,13 +780,7 @@ export function dashboard(channelId) {
   if (startBtn) {
     startBtn.onclick = async () => {
       try {
-        if (!page.showDirectoryPicker) {
-          throw new Error('File System Access API 미지원');
-        }
-        const directoryHandle = await page.showDirectoryPicker({
-          mode: 'readwrite',
-          id: 'soop-all-record'
-        });
+        const directoryHandle = await pickNewDirectory();
         cmd('start', { directoryHandle });
       } catch (e) {
         if (e?.name !== 'AbortError') {

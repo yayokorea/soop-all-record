@@ -35,6 +35,30 @@ export async function recalledDirectory() {
   return handle;
 }
 
+export function getDirectoryPicker() {
+  if (typeof window !== 'undefined' && typeof window.showDirectoryPicker === 'function') {
+    return window.showDirectoryPicker.bind(window);
+  }
+  if (typeof page !== 'undefined' && typeof page.showDirectoryPicker === 'function') {
+    return page.showDirectoryPicker.bind(page);
+  }
+  return null;
+}
+
+export async function pickNewDirectory() {
+  const picker = getDirectoryPicker();
+  if (!picker) {
+    throw new Error('이 브라우저는 File System Access API(폴더 선택)를 지원하지 않습니다. Chrome, Edge, Whale 등을 사용해주세요.');
+  }
+  const handle = await picker({ mode: 'readwrite', id: 'soop-all-record' });
+  try {
+    await rememberDirectory(handle);
+  } catch (error) {
+    log('warn', 'folder-memory', '폴더 기억 실패', { error: String(error) });
+  }
+  return handle;
+}
+
 export async function chooseDirectory() {
   let handle = null;
   try {
@@ -44,20 +68,19 @@ export async function chooseDirectory() {
   }
 
   if (handle) {
-    let permission = await handle.queryPermission({ mode: 'readwrite' });
-    if (permission !== 'granted') {
-      permission = await handle.requestPermission({ mode: 'readwrite' });
-    }
-    if (permission === 'granted') {
-      return handle;
+    try {
+      let permission = await handle.queryPermission({ mode: 'readwrite' });
+      if (permission !== 'granted') {
+        permission = await handle.requestPermission({ mode: 'readwrite' });
+      }
+      if (permission === 'granted') {
+        return handle;
+      }
+    } catch (e) {
+      log('warn', 'folder-permission', '폴더 권한 획득 실패', { error: String(e) });
     }
   }
 
-  handle = await page.showDirectoryPicker({ mode: 'readwrite', id: 'soop-all-record' });
-  try {
-    await rememberDirectory(handle);
-  } catch (error) {
-    log('warn', 'folder-memory', '폴더 기억 실패', { error: String(error) });
-  }
-  return handle;
+  return await pickNewDirectory();
 }
+

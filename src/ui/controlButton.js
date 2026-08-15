@@ -3,7 +3,7 @@
  */
 
 import { page, S, PARAM, id, mb } from '../config/state.js';
-import { chooseDirectory, rememberDirectory } from './storageHelper.js';
+import { chooseDirectory, rememberDirectory, pickNewDirectory } from './storageHelper.js';
 import { toast, friendlyError } from './toast.js';
 import { start, stop } from '../core/diskWriter.js';
 import { setControlButtonUpdater } from '../core/mseHook.js';
@@ -40,43 +40,8 @@ export async function beginFromUi() {
   }
 }
 
-export function showPopover(reposition = true) {
-  if (!popover) {
-    popover = document.createElement('div');
-    popover.id = 'soopAllRecordPopover';
-    Object.assign(popover.style, {
-      position: 'fixed',
-      zIndex: '2147483646',
-      width: '320px',
-      padding: '18px',
-      borderRadius: '14px',
-      background: 'rgba(20, 20, 20, 0.96)',
-      backdropFilter: 'blur(20px)',
-      webkitBackdropFilter: 'blur(20px)',
-      border: '1px solid #2e2e2e',
-      color: '#ffffff',
-      font: '13px/1.5 -apple-system, BlinkMacSystemFont, "Pretendard", "Segoe UI", Roboto, sans-serif',
-      boxShadow: '0 20px 40px -12px rgba(0, 0, 0, 0.7), 0 0 1px 1px rgba(255, 255, 255, 0.06)',
-      boxSizing: 'border-box',
-      userSelect: 'none'
-    });
-    document.documentElement.appendChild(popover);
-
-    document.addEventListener(
-      'click',
-      e => {
-        if (
-          popover.style.display !== 'none' &&
-          !popover.contains(e.target) &&
-          e.target !== controlButton &&
-          !controlButton?.contains(e.target)
-        ) {
-          hidePopover();
-        }
-      },
-      true
-    );
-  }
+export function updatePopoverContent() {
+  if (!popover) return;
 
   const stateText = S.stopping
     ? '저장 마무리 중'
@@ -95,7 +60,7 @@ export function showPopover(reposition = true) {
   const elapsedMin = Math.floor(elapsed / 60);
   const elapsedSec = String(elapsed % 60).padStart(2, '0');
 
-  const summary = S.recording
+  const summaryHtml = S.recording
     ? `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
          <span style="font-weight:800;font-size:17px;color:#ff4d4f;font-variant-numeric:tabular-nums">${elapsedMin}:${elapsedSec}</span>
          <span style="font-weight:700;font-size:14px;color:#ffffff">${mb(S.bytes)} <span style="font-size:11px;color:#737373">MiB</span></span>
@@ -127,70 +92,140 @@ export function showPopover(reposition = true) {
       ? '#00c471'
       : '#ffa000';
 
-  popover.innerHTML = `
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
-      <div style="font-weight:700;font-size:14px;color:#ffffff;display:flex;align-items:center;gap:8px">
-        <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${dotColor};"></span>
-        SOOP 원본 녹화
-      </div>
-      <span style="font-size:11px;font-weight:700;padding:3px 8px;border-radius:20px;background:${statusBg};color:${statusColor}">${stateText}</span>
-    </div>
-    <div style="background:#1e1e1e;border:1px solid #282828;border-radius:10px;padding:12px 14px;margin-bottom:12px">${summary}</div>
-    <div style="color:#737373;font-size:11.5px;margin-bottom:14px;display:flex;align-items:center;gap:4px;overflow:hidden">
-      <span style="flex-shrink:0;color:#737373">폴더:</span>
-      <span style="font-weight:600;color:#b3b3b3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${S.directory?.name || '시작 시 지정'}">${S.directory?.name || '시작 시 지정'}</span>
-    </div>
-    <div style="display:flex;gap:7px;flex-wrap:wrap">
-      <button id="sarPrimary" style="flex:1;min-width:120px;padding:9px 14px;border:0;border-radius:8px;background:${S.recording ? '#ff4d4f' : '#00c471'};color:${S.recording ? '#ffffff' : '#141414'};font-weight:700;cursor:pointer;font-size:12.5px;transition:opacity .15s" ${(!S.recording && !S.canStart) || S.starting || S.stopping ? 'disabled' : ''}>${S.recording ? '녹화 중지' : '새 녹화 시작'}</button>
-      <button id="sarFolder" style="padding:9px 12px;border:1px solid #2e2e2e;border-radius:8px;background:#1e1e1e;color:#b3b3b3;font-weight:600;cursor:pointer;font-size:12px" ${S.recording ? 'disabled' : ''}>폴더 변경</button>
-      <button id="sarDebug" style="width:100%;margin-top:2px;padding:8px 10px;border:1px solid #282828;border-radius:8px;background:transparent;color:#737373;font-weight:600;cursor:pointer;font-size:11.5px">상세 모니터링 대시보드</button>
-    </div>`;
+  const dotEl = popover.querySelector('#sarDot');
+  if (dotEl) dotEl.style.background = dotColor;
+
+  const stateBadge = popover.querySelector('#sarStateBadge');
+  if (stateBadge) {
+    stateBadge.textContent = stateText;
+    stateBadge.style.background = statusBg;
+    stateBadge.style.color = statusColor;
+  }
+
+  const summaryEl = popover.querySelector('#sarSummary');
+  if (summaryEl) summaryEl.innerHTML = summaryHtml;
+
+  const folderNameEl = popover.querySelector('#sarFolderName');
+  if (folderNameEl) {
+    const name = S.directory?.name || '시작 시 지정';
+    folderNameEl.textContent = name;
+    folderNameEl.title = name;
+  }
 
   const primaryBtn = popover.querySelector('#sarPrimary');
   if (primaryBtn) {
-    primaryBtn.onclick = async () => {
-      hidePopover();
-      if (S.recording) {
-        await stop();
-      } else {
-        await beginFromUi();
-      }
-    };
+    primaryBtn.textContent = S.recording ? '녹화 중지' : '새 녹화 시작';
+    primaryBtn.style.background = S.recording ? '#ff4d4f' : '#00c471';
+    primaryBtn.style.color = S.recording ? '#ffffff' : '#141414';
+    primaryBtn.disabled = (!S.recording && !S.canStart) || S.starting || S.stopping;
   }
 
   const folderBtn = popover.querySelector('#sarFolder');
   if (folderBtn) {
-    folderBtn.onclick = async () => {
-      try {
-        const handle = await page.showDirectoryPicker({ mode: 'readwrite', id: 'soop-all-record' });
-        await rememberDirectory(handle);
-        S.directory = handle;
-        toast(`저장 폴더: ${handle.name}`);
-        showPopover(false);
-      } catch (error) {
-        if (error?.name !== 'AbortError') {
-          toast(friendlyError(error), 'error');
+    folderBtn.disabled = S.recording;
+  }
+}
+
+export function showPopover(reposition = true) {
+  if (!popover) {
+    popover = document.createElement('div');
+    popover.id = 'soopAllRecordPopover';
+    Object.assign(popover.style, {
+      position: 'fixed',
+      zIndex: '2147483646',
+      width: '320px',
+      padding: '18px',
+      borderRadius: '14px',
+      background: 'rgba(20, 20, 20, 0.96)',
+      backdropFilter: 'blur(20px)',
+      webkitBackdropFilter: 'blur(20px)',
+      border: '1px solid #2e2e2e',
+      color: '#ffffff',
+      font: '13px/1.5 -apple-system, BlinkMacSystemFont, "Pretendard", "Segoe UI", Roboto, sans-serif',
+      boxShadow: '0 20px 40px -12px rgba(0, 0, 0, 0.7), 0 0 1px 1px rgba(255, 255, 255, 0.06)',
+      boxSizing: 'border-box',
+      userSelect: 'none'
+    });
+
+    popover.innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+        <div style="font-weight:700;font-size:14px;color:#ffffff;display:flex;align-items:center;gap:8px">
+          <span id="sarDot" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#ffa000;"></span>
+          SOOP 원본 녹화
+        </div>
+        <span id="sarStateBadge" style="font-size:11px;font-weight:700;padding:3px 8px;border-radius:20px;background:rgba(255,160,0,0.18);color:#ffa000">스트림 감지 중</span>
+      </div>
+      <div id="sarSummary" style="background:#1e1e1e;border:1px solid #282828;border-radius:10px;padding:12px 14px;margin-bottom:12px"></div>
+      <div style="color:#737373;font-size:11.5px;margin-bottom:14px;display:flex;align-items:center;gap:4px;overflow:hidden">
+        <span style="flex-shrink:0;color:#737373">폴더:</span>
+        <span id="sarFolderName" style="font-weight:600;color:#b3b3b3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">시작 시 지정</span>
+      </div>
+      <div style="display:flex;gap:7px;flex-wrap:wrap">
+        <button id="sarPrimary" style="flex:1;min-width:120px;padding:9px 14px;border:0;border-radius:8px;background:#00c471;color:#141414;font-weight:700;cursor:pointer;font-size:12.5px;transition:opacity .15s">새 녹화 시작</button>
+        <button id="sarFolder" style="padding:9px 12px;border:1px solid #2e2e2e;border-radius:8px;background:#1e1e1e;color:#b3b3b3;font-weight:600;cursor:pointer;font-size:12px">폴더 변경</button>
+        <button id="sarDebug" style="width:100%;margin-top:2px;padding:8px 10px;border:1px solid #282828;border-radius:8px;background:transparent;color:#737373;font-weight:600;cursor:pointer;font-size:11.5px">상세 모니터링 대시보드</button>
+      </div>`;
+
+    document.documentElement.appendChild(popover);
+
+    // 이벤트 1회 바인딩
+    const primaryBtn = popover.querySelector('#sarPrimary');
+    if (primaryBtn) {
+      primaryBtn.onclick = async () => {
+        hidePopover();
+        if (S.recording) {
+          await stop();
+        } else {
+          await beginFromUi();
         }
-      }
-    };
+      };
+    }
+
+    const folderBtn = popover.querySelector('#sarFolder');
+    if (folderBtn) {
+      folderBtn.onclick = async () => {
+        try {
+          const handle = await pickNewDirectory();
+          S.directory = handle;
+          toast(`저장 폴더가 [${handle.name}] 폴더로 변경되었습니다.`);
+          updatePopoverContent();
+        } catch (error) {
+          if (error?.name !== 'AbortError') {
+            toast(friendlyError(error), 'error');
+          }
+        }
+      };
+    }
+
+    const debugBtn = popover.querySelector('#sarDebug');
+    if (debugBtn) {
+      debugBtn.onclick = () => openDebug();
+    }
+
+    document.addEventListener(
+      'click',
+      e => {
+        if (
+          popover.style.display !== 'none' &&
+          !popover.contains(e.target) &&
+          e.target !== controlButton &&
+          !controlButton?.contains(e.target)
+        ) {
+          hidePopover();
+        }
+      },
+      true
+    );
   }
 
-  const debugBtn = popover.querySelector('#sarDebug');
-  if (debugBtn) {
-    debugBtn.onclick = () => openDebug();
-  }
+  updatePopoverContent();
 
   // 위치 재계산은 사용자가 직접 열었거나(reposition = true), 아직 화면에 표시되지 않은 경우에만 수행
   if (reposition || popover.style.display !== 'block') {
     const rect = controlButton?.getBoundingClientRect();
     if (rect) {
-      // 뷰포트 내 안정적인 위치 계산 (화면 아래 기준 고정)
       const popoverWidth = 320;
-      const popoverHeight = 220;
       const left = Math.max(12, Math.min(window.innerWidth - popoverWidth - 12, rect.right - popoverWidth));
-      
-      // 컨트롤 바가 내려가더라도 팝오버가 아래로 추락하지 않도록
-      // 뷰포트 하단으로부터의 거리를 기준으로 고정
       const bottomDistance = Math.max(48, window.innerHeight - rect.top + 8);
       popover.style.left = `${left}px`;
       popover.style.bottom = `${bottomDistance}px`;

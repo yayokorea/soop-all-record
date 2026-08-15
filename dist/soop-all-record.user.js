@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SOOP(숲) 라이브 무손실 원본 녹화기
 // @namespace    https://github.com/yayokorea/soop-all-record
-// @version      4.0.1
+// @version      4.0.2
 // @author       Yayo
 // @description  SOOP 라이브 원본 스트림을 File System Access API로 브라우저 메모리 누수 없이 실시간 디스크에 무손실로 저장하고 병합 배치를 생성합니다.
 // @license      MIT
@@ -31,7 +31,7 @@
     return activeCount > 0 || bufferCount > 0;
   };
   const S = {
-    version: "4.0.1",
+    version: "4.0.2",
     recording: false,
     starting: false,
     stopping: false,
@@ -960,6 +960,28 @@ ${merge.scriptName}을 실행하면 최종 MP4가 생성됩니다.`,
     db.close();
     return handle;
   }
+  function getDirectoryPicker() {
+    if (typeof window !== "undefined" && typeof window.showDirectoryPicker === "function") {
+      return window.showDirectoryPicker.bind(window);
+    }
+    if (typeof page !== "undefined" && typeof page.showDirectoryPicker === "function") {
+      return page.showDirectoryPicker.bind(page);
+    }
+    return null;
+  }
+  async function pickNewDirectory() {
+    const picker = getDirectoryPicker();
+    if (!picker) {
+      throw new Error("이 브라우저는 File System Access API(폴더 선택)를 지원하지 않습니다. Chrome, Edge, Whale 등을 사용해주세요.");
+    }
+    const handle = await picker({ mode: "readwrite", id: "soop-all-record" });
+    try {
+      await rememberDirectory(handle);
+    } catch (error) {
+      log("warn", "folder-memory", "폴더 기억 실패", { error: String(error) });
+    }
+    return handle;
+  }
   async function chooseDirectory() {
     let handle = null;
     try {
@@ -968,21 +990,19 @@ ${merge.scriptName}을 실행하면 최종 MP4가 생성됩니다.`,
       log("warn", "folder-recall", "폴더 복원 실패", { error: String(e) });
     }
     if (handle) {
-      let permission = await handle.queryPermission({ mode: "readwrite" });
-      if (permission !== "granted") {
-        permission = await handle.requestPermission({ mode: "readwrite" });
-      }
-      if (permission === "granted") {
-        return handle;
+      try {
+        let permission = await handle.queryPermission({ mode: "readwrite" });
+        if (permission !== "granted") {
+          permission = await handle.requestPermission({ mode: "readwrite" });
+        }
+        if (permission === "granted") {
+          return handle;
+        }
+      } catch (e) {
+        log("warn", "folder-permission", "폴더 권한 획득 실패", { error: String(e) });
       }
     }
-    handle = await page.showDirectoryPicker({ mode: "readwrite", id: "soop-all-record" });
-    try {
-      await rememberDirectory(handle);
-    } catch (error) {
-      log("warn", "folder-memory", "폴더 기억 실패", { error: String(error) });
-    }
-    return handle;
+    return await pickNewDirectory();
   }
   let controlButton = null;
   let popover = null;
@@ -1012,8 +1032,58 @@ ${merge.scriptName}을 실행하면 최종 MP4가 생성됩니다.`,
       }
     }
   }
+  function updatePopoverContent() {
+    var _a;
+    if (!popover) return;
+    const stateText = S.stopping ? "저장 마무리 중" : S.starting ? "녹화 준비 중" : S.recording ? "녹화 진행 중" : S.canStart ? "녹화 대기 중" : "스트림 감지 중";
+    const fs = S.fragmentStats;
+    const missing = [...fs.missing].filter(([, m]) => m.confirmed).length;
+    const elapsed = S.startedAt ? Math.round((Date.now() - S.startedAt) / 1e3) : 0;
+    const elapsedMin = Math.floor(elapsed / 60);
+    const elapsedSec = String(elapsed % 60).padStart(2, "0");
+    const summaryHtml = S.recording ? `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+         <span style="font-weight:800;font-size:17px;color:#ff4d4f;font-variant-numeric:tabular-nums">${elapsedMin}:${elapsedSec}</span>
+         <span style="font-weight:700;font-size:14px;color:#ffffff">${mb(S.bytes)} <span style="font-size:11px;color:#737373">MiB</span></span>
+       </div>
+       <div style="font-size:11px;color:#b3b3b3;display:grid;grid-template-columns:1fr 1fr;gap:5px;line-height:1.4">
+         <div>저장: <span style="color:#ffffff;font-weight:700">${fs.written}/${fs.queued}</span></div>
+         <div>누락: <span style="color:${missing > 0 ? "#ff4d4f" : "#00c471"};font-weight:700">${missing}</span></div>
+         <div>세그먼트: <span style="color:#ffffff;font-weight:700">Part ${S.parts.length}</span></div>
+         <div>대기 큐: <span style="color:#ffffff;font-weight:700">${mb(S.pendingBytes)} MiB</span></div>
+       </div>` : S.completedAt ? `<div style="font-size:12px;color:#ffffff;margin-bottom:4px">저장 완료: <b>${fs.written}개 청크</b> (Part ${S.parts.length})</div>
+         <div style="font-size:11px;color:#737373;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${S.mergeScript || "병합 스크립트 생성됨"}</div>` : `<div style="font-size:12px;color:#b3b3b3">미디어 트랙 초기화: <b style="color:#00c471">${[...S.activeByKind.values()].filter((r) => r.init).length}/${S.activeByKind.size}</b></div>`;
+    const statusBg = S.recording ? "rgba(255, 77, 79, 0.18)" : S.canStart ? "rgba(0, 196, 113, 0.18)" : "rgba(255, 160, 0, 0.18)";
+    const statusColor = S.recording ? "#ff4d4f" : S.canStart ? "#00c471" : "#ffa000";
+    const dotColor = S.recording ? "#ff4d4f" : S.canStart ? "#00c471" : "#ffa000";
+    const dotEl = popover.querySelector("#sarDot");
+    if (dotEl) dotEl.style.background = dotColor;
+    const stateBadge = popover.querySelector("#sarStateBadge");
+    if (stateBadge) {
+      stateBadge.textContent = stateText;
+      stateBadge.style.background = statusBg;
+      stateBadge.style.color = statusColor;
+    }
+    const summaryEl = popover.querySelector("#sarSummary");
+    if (summaryEl) summaryEl.innerHTML = summaryHtml;
+    const folderNameEl = popover.querySelector("#sarFolderName");
+    if (folderNameEl) {
+      const name = ((_a = S.directory) == null ? void 0 : _a.name) || "시작 시 지정";
+      folderNameEl.textContent = name;
+      folderNameEl.title = name;
+    }
+    const primaryBtn = popover.querySelector("#sarPrimary");
+    if (primaryBtn) {
+      primaryBtn.textContent = S.recording ? "녹화 중지" : "새 녹화 시작";
+      primaryBtn.style.background = S.recording ? "#ff4d4f" : "#00c471";
+      primaryBtn.style.color = S.recording ? "#ffffff" : "#141414";
+      primaryBtn.disabled = !S.recording && !S.canStart || S.starting || S.stopping;
+    }
+    const folderBtn = popover.querySelector("#sarFolder");
+    if (folderBtn) {
+      folderBtn.disabled = S.recording;
+    }
+  }
   function showPopover(reposition = true) {
-    var _a, _b;
     if (!popover) {
       popover = document.createElement("div");
       popover.id = "soopAllRecordPopover";
@@ -1033,7 +1103,55 @@ ${merge.scriptName}을 실행하면 최종 MP4가 생성됩니다.`,
         boxSizing: "border-box",
         userSelect: "none"
       });
+      popover.innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+        <div style="font-weight:700;font-size:14px;color:#ffffff;display:flex;align-items:center;gap:8px">
+          <span id="sarDot" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#ffa000;"></span>
+          SOOP 원본 녹화
+        </div>
+        <span id="sarStateBadge" style="font-size:11px;font-weight:700;padding:3px 8px;border-radius:20px;background:rgba(255,160,0,0.18);color:#ffa000">스트림 감지 중</span>
+      </div>
+      <div id="sarSummary" style="background:#1e1e1e;border:1px solid #282828;border-radius:10px;padding:12px 14px;margin-bottom:12px"></div>
+      <div style="color:#737373;font-size:11.5px;margin-bottom:14px;display:flex;align-items:center;gap:4px;overflow:hidden">
+        <span style="flex-shrink:0;color:#737373">폴더:</span>
+        <span id="sarFolderName" style="font-weight:600;color:#b3b3b3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">시작 시 지정</span>
+      </div>
+      <div style="display:flex;gap:7px;flex-wrap:wrap">
+        <button id="sarPrimary" style="flex:1;min-width:120px;padding:9px 14px;border:0;border-radius:8px;background:#00c471;color:#141414;font-weight:700;cursor:pointer;font-size:12.5px;transition:opacity .15s">새 녹화 시작</button>
+        <button id="sarFolder" style="padding:9px 12px;border:1px solid #2e2e2e;border-radius:8px;background:#1e1e1e;color:#b3b3b3;font-weight:600;cursor:pointer;font-size:12px">폴더 변경</button>
+        <button id="sarDebug" style="width:100%;margin-top:2px;padding:8px 10px;border:1px solid #282828;border-radius:8px;background:transparent;color:#737373;font-weight:600;cursor:pointer;font-size:11.5px">상세 모니터링 대시보드</button>
+      </div>`;
       document.documentElement.appendChild(popover);
+      const primaryBtn = popover.querySelector("#sarPrimary");
+      if (primaryBtn) {
+        primaryBtn.onclick = async () => {
+          hidePopover();
+          if (S.recording) {
+            await stop();
+          } else {
+            await beginFromUi();
+          }
+        };
+      }
+      const folderBtn = popover.querySelector("#sarFolder");
+      if (folderBtn) {
+        folderBtn.onclick = async () => {
+          try {
+            const handle = await pickNewDirectory();
+            S.directory = handle;
+            toast(`저장 폴더가 [${handle.name}] 폴더로 변경되었습니다.`);
+            updatePopoverContent();
+          } catch (error) {
+            if ((error == null ? void 0 : error.name) !== "AbortError") {
+              toast(friendlyError(error), "error");
+            }
+          }
+        };
+      }
+      const debugBtn = popover.querySelector("#sarDebug");
+      if (debugBtn) {
+        debugBtn.onclick = () => openDebug();
+      }
       document.addEventListener(
         "click",
         (e) => {
@@ -1044,75 +1162,7 @@ ${merge.scriptName}을 실행하면 최종 MP4가 생성됩니다.`,
         true
       );
     }
-    const stateText = S.stopping ? "저장 마무리 중" : S.starting ? "녹화 준비 중" : S.recording ? "녹화 진행 중" : S.canStart ? "녹화 대기 중" : "스트림 감지 중";
-    const fs = S.fragmentStats;
-    const missing = [...fs.missing].filter(([, m]) => m.confirmed).length;
-    const elapsed = S.startedAt ? Math.round((Date.now() - S.startedAt) / 1e3) : 0;
-    const elapsedMin = Math.floor(elapsed / 60);
-    const elapsedSec = String(elapsed % 60).padStart(2, "0");
-    const summary = S.recording ? `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-         <span style="font-weight:800;font-size:17px;color:#ff4d4f;font-variant-numeric:tabular-nums">${elapsedMin}:${elapsedSec}</span>
-         <span style="font-weight:700;font-size:14px;color:#ffffff">${mb(S.bytes)} <span style="font-size:11px;color:#737373">MiB</span></span>
-       </div>
-       <div style="font-size:11px;color:#b3b3b3;display:grid;grid-template-columns:1fr 1fr;gap:5px;line-height:1.4">
-         <div>저장: <span style="color:#ffffff;font-weight:700">${fs.written}/${fs.queued}</span></div>
-         <div>누락: <span style="color:${missing > 0 ? "#ff4d4f" : "#00c471"};font-weight:700">${missing}</span></div>
-         <div>세그먼트: <span style="color:#ffffff;font-weight:700">Part ${S.parts.length}</span></div>
-         <div>대기 큐: <span style="color:#ffffff;font-weight:700">${mb(S.pendingBytes)} MiB</span></div>
-       </div>` : S.completedAt ? `<div style="font-size:12px;color:#ffffff;margin-bottom:4px">저장 완료: <b>${fs.written}개 청크</b> (Part ${S.parts.length})</div>
-         <div style="font-size:11px;color:#737373;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${S.mergeScript || "병합 스크립트 생성됨"}</div>` : `<div style="font-size:12px;color:#b3b3b3">미디어 트랙 초기화: <b style="color:#00c471">${[...S.activeByKind.values()].filter((r) => r.init).length}/${S.activeByKind.size}</b></div>`;
-    const statusBg = S.recording ? "rgba(255, 77, 79, 0.18)" : S.canStart ? "rgba(0, 196, 113, 0.18)" : "rgba(255, 160, 0, 0.18)";
-    const statusColor = S.recording ? "#ff4d4f" : S.canStart ? "#00c471" : "#ffa000";
-    const dotColor = S.recording ? "#ff4d4f" : S.canStart ? "#00c471" : "#ffa000";
-    popover.innerHTML = `
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
-      <div style="font-weight:700;font-size:14px;color:#ffffff;display:flex;align-items:center;gap:8px">
-        <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${dotColor};"></span>
-        SOOP 원본 녹화
-      </div>
-      <span style="font-size:11px;font-weight:700;padding:3px 8px;border-radius:20px;background:${statusBg};color:${statusColor}">${stateText}</span>
-    </div>
-    <div style="background:#1e1e1e;border:1px solid #282828;border-radius:10px;padding:12px 14px;margin-bottom:12px">${summary}</div>
-    <div style="color:#737373;font-size:11.5px;margin-bottom:14px;display:flex;align-items:center;gap:4px;overflow:hidden">
-      <span style="flex-shrink:0;color:#737373">폴더:</span>
-      <span style="font-weight:600;color:#b3b3b3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${((_a = S.directory) == null ? void 0 : _a.name) || "시작 시 지정"}">${((_b = S.directory) == null ? void 0 : _b.name) || "시작 시 지정"}</span>
-    </div>
-    <div style="display:flex;gap:7px;flex-wrap:wrap">
-      <button id="sarPrimary" style="flex:1;min-width:120px;padding:9px 14px;border:0;border-radius:8px;background:${S.recording ? "#ff4d4f" : "#00c471"};color:${S.recording ? "#ffffff" : "#141414"};font-weight:700;cursor:pointer;font-size:12.5px;transition:opacity .15s" ${!S.recording && !S.canStart || S.starting || S.stopping ? "disabled" : ""}>${S.recording ? "녹화 중지" : "새 녹화 시작"}</button>
-      <button id="sarFolder" style="padding:9px 12px;border:1px solid #2e2e2e;border-radius:8px;background:#1e1e1e;color:#b3b3b3;font-weight:600;cursor:pointer;font-size:12px" ${S.recording ? "disabled" : ""}>폴더 변경</button>
-      <button id="sarDebug" style="width:100%;margin-top:2px;padding:8px 10px;border:1px solid #282828;border-radius:8px;background:transparent;color:#737373;font-weight:600;cursor:pointer;font-size:11.5px">상세 모니터링 대시보드</button>
-    </div>`;
-    const primaryBtn = popover.querySelector("#sarPrimary");
-    if (primaryBtn) {
-      primaryBtn.onclick = async () => {
-        hidePopover();
-        if (S.recording) {
-          await stop();
-        } else {
-          await beginFromUi();
-        }
-      };
-    }
-    const folderBtn = popover.querySelector("#sarFolder");
-    if (folderBtn) {
-      folderBtn.onclick = async () => {
-        try {
-          const handle = await page.showDirectoryPicker({ mode: "readwrite", id: "soop-all-record" });
-          await rememberDirectory(handle);
-          S.directory = handle;
-          toast(`저장 폴더: ${handle.name}`);
-          showPopover(false);
-        } catch (error) {
-          if ((error == null ? void 0 : error.name) !== "AbortError") {
-            toast(friendlyError(error), "error");
-          }
-        }
-      };
-    }
-    const debugBtn = popover.querySelector("#sarDebug");
-    if (debugBtn) {
-      debugBtn.onclick = () => openDebug();
-    }
+    updatePopoverContent();
     if (reposition || popover.style.display !== "block") {
       const rect = controlButton == null ? void 0 : controlButton.getBoundingClientRect();
       if (rect) {
@@ -1928,13 +1978,7 @@ ${merge.scriptName}을 실행하면 최종 MP4가 생성됩니다.`,
     if (startBtn) {
       startBtn.onclick = async () => {
         try {
-          if (!page.showDirectoryPicker) {
-            throw new Error("File System Access API 미지원");
-          }
-          const directoryHandle = await page.showDirectoryPicker({
-            mode: "readwrite",
-            id: "soop-all-record"
-          });
+          const directoryHandle = await pickNewDirectory();
           cmd("start", { directoryHandle });
         } catch (e) {
           if ((e == null ? void 0 : e.name) !== "AbortError") {
