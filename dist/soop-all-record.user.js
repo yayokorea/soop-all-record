@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SOOP(숲) 라이브 무손실 원본 녹화기
 // @namespace    https://github.com/yayokorea/soop-all-record
-// @version      4.1.0
+// @version      4.1.1
 // @author       Yayo
 // @description  SOOP 라이브 원본 스트림을 File System Access API로 브라우저 메모리 누수 없이 실시간 디스크에 무손실로 저장하고 병합 배치를 생성합니다.
 // @license      MIT
@@ -31,7 +31,7 @@
     return activeCount > 0 || bufferCount > 0;
   };
   const S = {
-    version: "4.1.0",
+    version: "4.1.1",
     recording: false,
     starting: false,
     stopping: false,
@@ -1263,9 +1263,18 @@ ${merge.scriptName}을 실행하면 최종 MP4가 생성됩니다.`,
         event.stopPropagation();
         openDebug();
       });
-      right.prepend(button);
+      const ensureFirst = () => {
+        if (right.firstElementChild !== button) {
+          right.prepend(button);
+        }
+      };
+      ensureFirst();
       controlButton = button;
       updateControlButton();
+      const ctrlObserver = new MutationObserver(() => {
+        ensureFirst();
+      });
+      ctrlObserver.observe(right, { childList: true });
       recalledDirectory().then((dir) => {
         if (dir && !S.rootDirectory) {
           S.rootDirectory = dir;
@@ -1274,6 +1283,7 @@ ${merge.scriptName}을 실행하면 최종 MP4가 생성됩니다.`,
       }).catch(() => {
       });
       setInterval(() => {
+        ensureFirst();
         updateControlButton();
         if ((popover == null ? void 0 : popover.style.display) === "block") {
           showPopover(false);

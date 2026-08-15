@@ -331,9 +331,21 @@ export function installControlButton() {
       openDebug();
     });
 
-    right.prepend(button);
+    const ensureFirst = () => {
+      if (right.firstElementChild !== button) {
+        right.prepend(button);
+      }
+    };
+
+    ensureFirst();
     controlButton = button;
     updateControlButton();
+
+    // SOOP 플레이어가 나중에 다른 버튼들을 추가하더라도 항상 맨 앞(왼쪽) 유지
+    const ctrlObserver = new MutationObserver(() => {
+      ensureFirst();
+    });
+    ctrlObserver.observe(right, { childList: true });
 
     recalledDirectory().then(dir => {
       if (dir && !S.rootDirectory) {
@@ -343,6 +355,7 @@ export function installControlButton() {
     }).catch(() => {});
 
     setInterval(() => {
+      ensureFirst();
       updateControlButton();
       if (popover?.style.display === 'block') {
         showPopover(false);
