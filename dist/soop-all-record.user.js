@@ -9,7 +9,7 @@
 // @name:vi            Trình ghi livestream SOOP nguyên bản không mất chất lượng
 // @name:id            Perekam Live SOOP Lossless dari Stream Asli
 // @namespace          https://github.com/yayokorea/soop-all-record
-// @version            4.1.9
+// @version            4.1.10
 // @author             Yayo
 // @description        SOOP 라이브 원본 스트림을 디스크에 무손실로 저장합니다.
 // @description:ko     SOOP 라이브 원본 스트림을 디스크에 무손실로 저장합니다.
@@ -40,6 +40,24 @@
   const debugId = new URLSearchParams(location.search).get(PARAM);
   const id = `soop-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const bus = new page.BroadcastChannel(id);
+  const BUFFER_RECORD_LIMIT = 12;
+  const createFragmentStats = () => ({
+    observed: 0,
+    queued: 0,
+    written: 0,
+    failed: 0,
+    duplicates: 0,
+    late: 0,
+    missing: /* @__PURE__ */ new Map(),
+    missingCount: 0,
+    missingPendingCount: 0,
+    highest: null,
+    generations: /* @__PURE__ */ new Map(),
+    streams: /* @__PURE__ */ new Map(),
+    discontinuityCount: 0,
+    discontinuities: [],
+    untrackedGapSequences: 0
+  });
   const isCanStart = () => {
     if (S.recording || S.starting || S.stopping) return false;
     const activeCount = [...S.activeByKind.values()].filter((r) => r.init).length;
@@ -47,7 +65,7 @@
     return activeCount > 0 || bufferCount > 0;
   };
   const S = {
-    version: "4.1.9",
+    version: "4.1.10",
     recording: false,
     starting: false,
     stopping: false,
@@ -81,26 +99,26 @@
     rotationReason: null,
     transitionQueue: [],
     transitionBytes: 0,
-    fragmentStats: {
-      observed: 0,
-      queued: 0,
-      written: 0,
-      failed: 0,
-      duplicates: 0,
-      late: 0,
-      seen: /* @__PURE__ */ new Set(),
-      missing: /* @__PURE__ */ new Map(),
-      highest: null,
-      epochGeneration: null,
-      timeline: /* @__PURE__ */ new Map(),
-      discontinuities: []
-    },
+    fragmentStats: createFragmentStats(),
     pendingBytes: 0,
     peakPendingBytes: 0,
     reconnects: 0,
     qualityChanges: 0,
     broadcastId: location.pathname.split("/").filter(Boolean).pop()
   };
+  function compactBuffers(protectedRecords = []) {
+    if (S.buffers.size <= BUFFER_RECORD_LIMIT) return;
+    const protectedSet = new Set(protectedRecords);
+    const active = new Set(S.activeByKind.values());
+    const queued = new Set(S.transitionQueue.map((item) => item.record));
+    for (const [recordId, record2] of S.buffers) {
+      if (S.buffers.size <= BUFFER_RECORD_LIMIT) break;
+      if (protectedSet.has(record2) || active.has(record2) || queued.has(record2) || record2.writable || record2.pending > 0) {
+        continue;
+      }
+      S.buffers.delete(recordId);
+    }
+  }
   const iso = () => (/* @__PURE__ */ new Date()).toISOString();
   const mb = (n) => Math.round(n / 1048576 * 100) / 100;
   function log(level, type, message, data = null) {
@@ -156,8 +174,11 @@
           highest: S.fragmentStats.highest,
           missingPending: [...S.fragmentStats.missing].filter(([, m]) => !m.confirmed).map(([n]) => n).slice(-100),
           missingConfirmed: [...S.fragmentStats.missing].filter(([, m]) => m.confirmed).map(([n]) => n).slice(-100),
-          missingCount: [...S.fragmentStats.missing].filter(([, m]) => m.confirmed).length,
-          discontinuities: S.fragmentStats.discontinuities.slice(-100)
+          missingCount: S.fragmentStats.missingCount,
+          missingPendingCount: S.fragmentStats.missingPendingCount,
+          discontinuityCount: S.fragmentStats.discontinuityCount,
+          discontinuities: S.fragmentStats.discontinuities.slice(-100),
+          untrackedGapSequences: S.fragmentStats.untrackedGapSequences
         }
       },
       buffers: [...S.buffers.values()].map((r) => {
@@ -276,6 +297,15 @@
     };
   }
   const has = (bs, name) => bs.some((b) => b.type === name);
+  const SEEN_LIMIT_PER_STREAM = 512;
+  const SEEN_LIMIT_PER_GENERATION = 1024;
+  const MISSING_LIMIT_PER_GENERATION = 512;
+  const MISSING_DETAIL_LIMIT = 200;
+  const STREAM_LIMIT = 16;
+  const GENERATION_LIMIT = 8;
+  const DISCONTINUITY_DETAIL_LIMIT = 200;
+  const MAX_TRACKED_GAP = 256;
+  const CONFIRM_DISTANCE = 8;
   function fragmentInfo(u8) {
     const info = { sequence: null, tracks: [] };
     const top = children(u8, 0, u8.byteLength);
@@ -306,68 +336,143 @@
     return info;
   }
   function resetFragmentStats() {
-    S.fragmentStats = {
-      observed: 0,
-      queued: 0,
-      written: 0,
-      failed: 0,
-      duplicates: 0,
-      late: 0,
-      seen: /* @__PURE__ */ new Set(),
-      missing: /* @__PURE__ */ new Map(),
-      highest: null,
-      epochGeneration: null,
-      timeline: /* @__PURE__ */ new Map(),
-      discontinuities: []
-    };
+    S.fragmentStats = createFragmentStats();
   }
-  function observeFragment(info, generation) {
+  function trimMap(map, limit) {
+    while (map.size > limit) {
+      map.delete(map.keys().next().value);
+    }
+  }
+  function addDiscontinuity(st, detail) {
+    st.discontinuityCount++;
+    st.discontinuities.push(detail);
+    if (st.discontinuities.length > DISCONTINUITY_DETAIL_LIMIT) {
+      st.discontinuities.shift();
+    }
+  }
+  function streamStats(st, generation, stream) {
+    const key = `g${generation}:${stream}`;
+    let stats = st.streams.get(key);
+    if (!stats) {
+      stats = { key, generation, stream, seen: /* @__PURE__ */ new Map(), timeline: /* @__PURE__ */ new Map() };
+      st.streams.set(key, stats);
+      while (st.streams.size > STREAM_LIMIT) {
+        st.streams.delete(st.streams.keys().next().value);
+      }
+    }
+    return stats;
+  }
+  function generationStats(st, generation) {
+    const key = `g${generation}`;
+    let stats = st.generations.get(key);
+    if (!stats) {
+      stats = { key, generation, highest: null, seen: /* @__PURE__ */ new Map(), missing: /* @__PURE__ */ new Map() };
+      st.generations.set(key, stats);
+      while (st.generations.size > GENERATION_LIMIT) {
+        const oldestKey = st.generations.keys().next().value;
+        const oldest = st.generations.get(oldestKey);
+        for (const detail of oldest.missing.values()) {
+          confirmMissing(st, detail);
+        }
+        st.generations.delete(oldestKey);
+      }
+    }
+    return stats;
+  }
+  function confirmMissing(st, detail) {
+    if (detail.confirmed) return;
+    detail.confirmed = true;
+    st.missingPendingCount = Math.max(0, st.missingPendingCount - 1);
+    st.missingCount++;
+  }
+  function rememberMissing(st, generation, number, detectedAt, detectedBy) {
+    const key = `${generation.key}:${number}`;
+    const detail = {
+      number,
+      generation: generation.generation,
+      detectedBy,
+      detectedAt,
+      confirmed: false
+    };
+    generation.missing.set(number, detail);
+    st.missing.set(key, detail);
+    st.missingPendingCount++;
+    trimMap(st.missing, MISSING_DETAIL_LIMIT);
+    while (generation.missing.size > MISSING_LIMIT_PER_GENERATION) {
+      const oldestNumber = generation.missing.keys().next().value;
+      const oldest = generation.missing.get(oldestNumber);
+      confirmMissing(st, oldest);
+      generation.missing.delete(oldestNumber);
+    }
+  }
+  function observeFragment(info, generation, stream = "unknown") {
     const st = S.fragmentStats;
     const seq = info.sequence;
+    const currentStream = streamStats(st, generation, stream);
+    const currentGeneration = generationStats(st, generation);
     st.observed++;
-    if (st.epochGeneration !== generation) {
-      st.epochGeneration = generation;
-      st.highest = null;
-      st.timeline.clear();
-    }
+    let duplicate = false;
     if (seq != null) {
-      const key = `g${generation}:${seq}`;
-      if (st.seen.has(key)) {
+      duplicate = currentStream.seen.has(seq);
+      if (duplicate) {
         st.duplicates++;
       } else {
-        st.seen.add(key);
-        if (st.missing.has(key)) {
-          st.missing.delete(key);
+        currentStream.seen.set(seq, true);
+        trimMap(currentStream.seen, SEEN_LIMIT_PER_STREAM);
+      }
+      if (!currentGeneration.seen.has(seq)) {
+        currentGeneration.seen.set(seq, true);
+        trimMap(currentGeneration.seen, SEEN_LIMIT_PER_GENERATION);
+        const missing = currentGeneration.missing.get(seq);
+        if (missing) {
+          currentGeneration.missing.delete(seq);
+          st.missing.delete(`${currentGeneration.key}:${seq}`);
+          if (missing.confirmed) {
+            st.missingCount = Math.max(0, st.missingCount - 1);
+          } else {
+            st.missingPendingCount = Math.max(0, st.missingPendingCount - 1);
+          }
           st.late++;
         }
-        if (st.highest != null && seq > st.highest + 1) {
-          for (let n = st.highest + 1; n < seq; n++) {
-            st.missing.set(`g${generation}:${n}`, {
-              number: n,
-              generation,
-              detectedAt: seq,
-              confirmed: false
+        if (currentGeneration.highest != null && seq > currentGeneration.highest + 1) {
+          const gap = seq - currentGeneration.highest - 1;
+          if (gap <= MAX_TRACKED_GAP) {
+            for (let n = currentGeneration.highest + 1; n < seq; n++) {
+              rememberMissing(st, currentGeneration, n, seq, stream);
+            }
+          } else {
+            st.untrackedGapSequences += gap;
+            addDiscontinuity(st, {
+              stream,
+              type: "sequence-jump",
+              from: currentGeneration.highest,
+              to: seq,
+              gap,
+              sequence: seq
             });
           }
         }
-        if (st.highest == null || seq > st.highest) {
+        if (currentGeneration.highest == null || seq > currentGeneration.highest) {
+          currentGeneration.highest = seq;
           st.highest = seq;
         }
-        for (const [, m] of st.missing) {
-          if (m.generation === generation && st.highest - m.number >= 8) {
-            m.confirmed = true;
+        for (const detail of currentGeneration.missing.values()) {
+          if (currentGeneration.highest - detail.number >= CONFIRM_DISTANCE) {
+            confirmMissing(st, detail);
           }
         }
       }
     }
+    if (duplicate) return;
     for (const t of info.tracks) {
       if (t.trackId != null && t.baseTime != null) {
-        const prev = st.timeline.get(t.trackId);
+        const prev = currentStream.timeline.get(t.trackId);
         if (prev) {
           const delta = t.baseTime - prev.base;
           const history = prev.deltas;
           if (delta <= 0) {
-            st.discontinuities.push({
+            addDiscontinuity(st, {
+              stream,
               trackId: t.trackId,
               type: "backward",
               from: prev.base,
@@ -378,7 +483,8 @@
             const sorted = history.slice().sort((a, b) => a - b);
             const median = sorted.length ? sorted[Math.floor(sorted.length / 2)] : null;
             if (median && delta > median * 3) {
-              st.discontinuities.push({
+              addDiscontinuity(st, {
+                stream,
                 trackId: t.trackId,
                 type: "gap",
                 delta,
@@ -393,7 +499,7 @@
           }
           prev.base = t.baseTime;
         } else {
-          st.timeline.set(t.trackId, { base: t.baseTime, deltas: [] });
+          currentStream.timeline.set(t.trackId, { base: t.baseTime, deltas: [] });
         }
       }
     }
@@ -481,6 +587,7 @@
         r.writable = null;
       }
     }
+    compactBuffers();
     return files;
   }
   async function openPart(reason) {
@@ -562,6 +669,7 @@
           discarded++;
         }
       }
+      compactBuffers();
       log("info", "part-rotated", "새 Part로 녹화 계속", {
         reason,
         part: part.number,
@@ -636,9 +744,13 @@
       parts: S.parts,
       outputs,
       diagnostics: {
+        missingConfirmedCount: S.fragmentStats.missingCount,
+        missingPendingCount: S.fragmentStats.missingPendingCount,
         missingConfirmed: [...S.fragmentStats.missing].filter(([, m]) => m.confirmed).map(([n]) => n),
         missingPending: [...S.fragmentStats.missing].filter(([, m]) => !m.confirmed).map(([n]) => n),
-        discontinuities: S.fragmentStats.discontinuities
+        discontinuityCount: S.fragmentStats.discontinuityCount,
+        discontinuities: S.fragmentStats.discontinuities,
+        untrackedGapSequences: S.fragmentStats.untrackedGapSequences
       }
     };
     await manifestWriter.write(new TextEncoder().encode(JSON.stringify(manifest, null, 2)));
@@ -696,9 +808,6 @@
     if (S.pendingBytes > 536870912) {
       toast("쓰기 지연 초과로 녹화를 중지합니다.", "error", 8e3);
       stop();
-    }
-    if (S.chunks <= 10 || S.chunks % 20 === 0) {
-      send();
     }
   }
   async function start(dir) {
@@ -798,7 +907,6 @@
       const merge = await createSessionArtifacts();
       S.completedAt = iso();
       log("info", "stopped", "파일 쓰기 완료 및 무손실 병합 스크립트 생성", { files, merge });
-      const missing = [...S.fragmentStats.missing].filter(([, m]) => m.confirmed).length;
       toast(
         `녹화 완료 (${mb(S.bytes)} MiB, Part ${S.parts.length}개)
 ${merge.scriptName} 실행 시 MP4가 생성됩니다.`,
@@ -815,15 +923,18 @@ ${merge.scriptName} 실행 시 MP4가 생성됩니다.`,
       readiness(true);
     }
   }
-  function copy(input) {
-    let src;
+  function view(input) {
     if (input instanceof page.ArrayBuffer) {
-      src = new page.Uint8Array(input);
-    } else if (page.ArrayBuffer.isView(input)) {
-      src = new page.Uint8Array(input.buffer, input.byteOffset, input.byteLength);
-    } else {
-      return null;
+      return new page.Uint8Array(input);
     }
+    if (page.ArrayBuffer.isView(input)) {
+      return new page.Uint8Array(input.buffer, input.byteOffset, input.byteLength);
+    }
+    return null;
+  }
+  function copy(input) {
+    const src = view(input);
+    if (!src) return null;
     const dst = new page.Uint8Array(src.byteLength);
     dst.set(src);
     return dst;
@@ -853,7 +964,10 @@ ${merge.scriptName} 실행 시 MP4가 생성됩니다.`,
       };
       S.byObject.set(sb, r);
       S.buffers.set(r.id, r);
+    } else if (!S.buffers.has(r.id)) {
+      S.buffers.set(r.id, r);
     }
+    compactBuffers([r]);
     return r;
   }
   let controlButtonUpdater = () => {
@@ -868,7 +982,7 @@ ${merge.scriptName} 실행 시 MP4가 생성됩니다.`,
     updateControlButton$1();
     bus.postMessage({ type: "snapshot", snapshot: snap() });
   }
-  function readiness$1(immediate = false) {
+  function readiness(immediate = false) {
     clearTimeout(S.readyTimer);
     const check = () => {
       const active = [...S.activeByKind.values()].filter((r) => r.init);
@@ -905,20 +1019,21 @@ ${merge.scriptName} 실행 시 MP4가 생성됩니다.`,
       r.mime = String(mime || "unknown");
       r.generation = generation;
       log("info", "buffer-created", `Buffer ${r.id} 생성`, { mime: r.mime, generation });
-      readiness$1();
+      readiness();
       return sb;
     };
     page.SourceBuffer.prototype.appendBuffer = function(input) {
       var _a;
       try {
-        const data = copy(input);
-        if (data) {
+        const inputView = view(input);
+        if (inputView) {
           const r = record(this);
-          const bs = boxes(data);
-          r.observedBytes += data.byteLength;
+          const bs = boxes(inputView);
+          r.observedBytes += inputView.byteLength;
           r.observedChunks++;
           r.lastBoxes = bs;
           if (has(bs, "ftyp") && has(bs, "moov")) {
+            const data = copy(inputView);
             const previous = r.initMeta;
             const newMeta = initMeta(data, r.mime);
             const previousActive = S.activeByKind.get(kind(r));
@@ -927,12 +1042,13 @@ ${merge.scriptName} 실행 시 MP4가 생성됩니다.`,
             r.initMeta = newMeta;
             r.firstHex = Array.from(data.slice(0, 32)).map((v) => v.toString(16).padStart(2, "0")).join("");
             S.activeByKind.set(kind(r), r);
+            compactBuffers([r]);
             log("info", "init-cached", `Buffer ${r.id} init 캐시`, {
               bytes: data.byteLength,
               meta: newMeta,
               generation: r.generation
             });
-            readiness$1();
+            readiness();
             if (S.recording) {
               const current = S.parts.at(-1);
               const changed = previous && previous.fingerprint !== newMeta.fingerprint || previousActive && previousActive !== r && ((_a = previousActive.initMeta) == null ? void 0 : _a.fingerprint) !== newMeta.fingerprint;
@@ -945,8 +1061,9 @@ ${merge.scriptName} 실행 시 MP4가 생성됩니다.`,
               }
             }
           } else if (S.recording && (has(bs, "moof") || has(bs, "mdat"))) {
+            const data = copy(inputView);
             const info = fragmentInfo(data);
-            observeFragment(info, r.generation);
+            observeFragment(info, r.generation, `${kind(r)}#${r.id}`);
             if (S.rotating) {
               S.transitionQueue.push({ record: r, data, info, boxes: bs });
               S.transitionBytes += data.byteLength;
@@ -1036,6 +1153,9 @@ ${merge.scriptName} 실행 시 MP4가 생성됩니다.`,
   }
   let controlButton = null;
   let popover = null;
+  let controlObserver = null;
+  let rootObserver = null;
+  let installed = false;
   function hidePopover() {
     if (popover) {
       popover.style.display = "none";
@@ -1074,7 +1194,7 @@ ${merge.scriptName} 실행 시 MP4가 생성됩니다.`,
     if (!popover) return;
     const stateText = S.stopping ? "저장 마무리 중" : S.starting ? "녹화 준비 중" : S.recording ? "녹화 진행 중" : S.canStart ? "녹화 대기 중" : "스트림 감지 중";
     const fs = S.fragmentStats;
-    const missing = [...fs.missing].filter(([, m]) => m.confirmed).length;
+    const missing = fs.missingCount;
     const elapsed = S.startedAt ? Math.round((Date.now() - S.startedAt) / 1e3) : 0;
     const elapsedMin = Math.floor(elapsed / 60);
     const elapsedSec = String(elapsed % 60).padStart(2, "0");
@@ -1250,8 +1370,11 @@ ${merge.scriptName} 실행 시 MP4가 생성됩니다.`,
     }
   }
   function installControlButton() {
+    if (installed) return;
+    installed = true;
     setControlButtonUpdater(updateControlButton);
     const styleEl = document.createElement("style");
+    styleEl.id = "soopAllRecordStyle";
     styleEl.textContent = `
     @keyframes soopAllRecordPulse { 0% { transform: scale(0.92); opacity: 0.8; } 50% { transform: scale(1.18); opacity: 1; box-shadow: 0 0 12px #ef4444; } 100% { transform: scale(0.92); opacity: 0.8; } }
     @keyframes soopAllRecordSpin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
@@ -1260,9 +1383,11 @@ ${merge.scriptName} 실행 시 MP4가 생성됩니다.`,
   `;
     document.head.appendChild(styleEl);
     const attach = () => {
-      if (controlButton == null ? void 0 : controlButton.isConnected) return true;
       const right = document.querySelector("div.right_ctrl");
       if (!right) return false;
+      if ((controlButton == null ? void 0 : controlButton.isConnected) && controlButton.parentElement === right) return true;
+      controlObserver == null ? void 0 : controlObserver.disconnect();
+      controlButton == null ? void 0 : controlButton.remove();
       const button = document.createElement("button");
       button.type = "button";
       button.className = "btn_soop_all_record";
@@ -1304,31 +1429,38 @@ ${merge.scriptName} 실행 시 MP4가 생성됩니다.`,
       ensureFirst();
       controlButton = button;
       updateControlButton();
-      const ctrlObserver = new MutationObserver(() => {
+      controlObserver = new MutationObserver(() => {
+        if (!right.isConnected || document.querySelector("div.right_ctrl") !== right) {
+          attach();
+          return;
+        }
         ensureFirst();
       });
-      ctrlObserver.observe(right, { childList: true });
-      recalledDirectory().then((dir) => {
-        if (dir && !S.rootDirectory) {
-          S.rootDirectory = dir;
-          updatePopoverContent();
-        }
-      }).catch(() => {
-      });
-      setInterval(() => {
-        ensureFirst();
-        updateControlButton();
-        if ((popover == null ? void 0 : popover.style.display) === "block") {
-          showPopover(false);
-        }
-      }, 1e3);
+      controlObserver.observe(right, { childList: true });
       return true;
     };
-    if (attach()) return;
-    const observer = new MutationObserver(() => {
-      if (attach()) observer.disconnect();
+    recalledDirectory().then((dir) => {
+      if (dir && !S.rootDirectory) {
+        S.rootDirectory = dir;
+        updatePopoverContent();
+      }
+    }).catch(() => {
     });
-    observer.observe(document.documentElement, { childList: true, subtree: true });
+    rootObserver = new MutationObserver(() => {
+      const right = document.querySelector("div.right_ctrl");
+      if (!(controlButton == null ? void 0 : controlButton.isConnected) || controlButton.parentElement !== right) {
+        attach();
+      }
+    });
+    rootObserver.observe(document.documentElement, { childList: true, subtree: true });
+    attach();
+    setInterval(() => {
+      attach();
+      updateControlButton();
+      if ((popover == null ? void 0 : popover.style.display) === "block") {
+        showPopover(false);
+      }
+    }, 1e3);
   }
   function dashboard(channelId) {
     try {
@@ -1928,11 +2060,11 @@ ${merge.scriptName} 실행 시 MP4가 생성됩니다.`,
         missingReport.innerHTML = `
         <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
           <div style="display:flex;align-items:center;gap:10px">
-            <span style="color:var(--accent-red);font-weight:700;min-width:110px">확정 누락 번호:</span>
+            <span style="color:var(--accent-red);font-weight:700;min-width:110px">확정 누락 sequence ${f.missingCount}개 (최근):</span>
             <code>${esc(f.missingConfirmed.join(", ") || "누락 없음 (완벽 수신)")}</code>
           </div>
           <div style="display:flex;align-items:center;gap:10px">
-            <span style="color:var(--accent-orange);font-weight:700;min-width:110px">판정 대기 번호:</span>
+            <span style="color:var(--accent-orange);font-weight:700;min-width:110px">판정 대기 ${f.missingPendingCount}개 (최근):</span>
             <code>${esc(f.missingPending.join(", ") || "대기 항목 없음")}</code>
           </div>
         </div>`;
@@ -1981,7 +2113,7 @@ ${merge.scriptName} 실행 시 MP4가 생성됩니다.`,
         anomaliesBox.innerHTML = f.discontinuities.length ? f.discontinuities.map(
           (x) => `
           <div style="padding:12px 18px;background:rgba(255,160,0,0.15);border:1px solid var(--accent-orange);border-radius:10px;color:var(--accent-orange);font-size:13px">
-            Track ${x.trackId} · ${esc(x.type)} · seq ${x.sequence ?? "-"}
+            ${esc(x.stream || "unknown")} · Track ${x.trackId ?? "-"} · ${esc(x.type)} · seq ${x.sequence ?? "-"}
           </div>`
         ).join("") : '<div style="padding:14px 18px;background:var(--bg-card);border:1px solid var(--border);border-radius:10px;color:var(--accent-green);font-size:13px;font-weight:700">✓ 타임라인 이상 없음</div>';
       }

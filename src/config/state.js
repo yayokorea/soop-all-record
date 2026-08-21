@@ -9,6 +9,26 @@ export const debugId = new URLSearchParams(location.search).get(PARAM);
 export const id = `soop-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 export const bus = new page.BroadcastChannel(id);
 
+const BUFFER_RECORD_LIMIT = 12;
+
+export const createFragmentStats = () => ({
+  observed: 0,
+  queued: 0,
+  written: 0,
+  failed: 0,
+  duplicates: 0,
+  late: 0,
+  missing: new Map(),
+  missingCount: 0,
+  missingPendingCount: 0,
+  highest: null,
+  generations: new Map(),
+  streams: new Map(),
+  discontinuityCount: 0,
+  discontinuities: [],
+  untrackedGapSequences: 0
+});
+
 export const isCanStart = () => {
   if (S.recording || S.starting || S.stopping) return false;
   const activeCount = [...S.activeByKind.values()].filter(r => r.init).length;
@@ -50,26 +70,35 @@ export const S = {
   rotationReason: null,
   transitionQueue: [],
   transitionBytes: 0,
-  fragmentStats: {
-    observed: 0,
-    queued: 0,
-    written: 0,
-    failed: 0,
-    duplicates: 0,
-    late: 0,
-    seen: new Set(),
-    missing: new Map(),
-    highest: null,
-    epochGeneration: null,
-    timeline: new Map(),
-    discontinuities: []
-  },
+  fragmentStats: createFragmentStats(),
   pendingBytes: 0,
   peakPendingBytes: 0,
   reconnects: 0,
   qualityChanges: 0,
   broadcastId: location.pathname.split('/').filter(Boolean).pop()
 };
+
+export function compactBuffers(protectedRecords = []) {
+  if (S.buffers.size <= BUFFER_RECORD_LIMIT) return;
+
+  const protectedSet = new Set(protectedRecords);
+  const active = new Set(S.activeByKind.values());
+  const queued = new Set(S.transitionQueue.map(item => item.record));
+
+  for (const [recordId, record] of S.buffers) {
+    if (S.buffers.size <= BUFFER_RECORD_LIMIT) break;
+    if (
+      protectedSet.has(record) ||
+      active.has(record) ||
+      queued.has(record) ||
+      record.writable ||
+      record.pending > 0
+    ) {
+      continue;
+    }
+    S.buffers.delete(recordId);
+  }
+}
 
 export const iso = () => new Date().toISOString();
 export const mb = n => Math.round((n / 1048576) * 100) / 100;
@@ -128,8 +157,11 @@ export function snap() {
         highest: S.fragmentStats.highest,
         missingPending: [...S.fragmentStats.missing].filter(([, m]) => !m.confirmed).map(([n]) => n).slice(-100),
         missingConfirmed: [...S.fragmentStats.missing].filter(([, m]) => m.confirmed).map(([n]) => n).slice(-100),
-        missingCount: [...S.fragmentStats.missing].filter(([, m]) => m.confirmed).length,
-        discontinuities: S.fragmentStats.discontinuities.slice(-100)
+        missingCount: S.fragmentStats.missingCount,
+        missingPendingCount: S.fragmentStats.missingPendingCount,
+        discontinuityCount: S.fragmentStats.discontinuityCount,
+        discontinuities: S.fragmentStats.discontinuities.slice(-100),
+        untrackedGapSequences: S.fragmentStats.untrackedGapSequences
       }
     },
     buffers: [...S.buffers.values()].map(r => ({

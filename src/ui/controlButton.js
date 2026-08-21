@@ -10,6 +10,10 @@ import { setControlButtonUpdater } from '../core/mseHook.js';
 
 let controlButton = null;
 let popover = null;
+let controlObserver = null;
+let rootObserver = null;
+let updateTimer = 0;
+let installed = false;
 
 export function hidePopover() {
   if (popover) {
@@ -63,7 +67,7 @@ export function updatePopoverContent() {
           : '스트림 감지 중';
 
   const fs = S.fragmentStats;
-  const missing = [...fs.missing].filter(([, m]) => m.confirmed).length;
+  const missing = fs.missingCount;
   
   const elapsed = S.startedAt ? Math.round((Date.now() - S.startedAt) / 1000) : 0;
   const elapsedMin = Math.floor(elapsed / 60);
@@ -288,9 +292,12 @@ export function updateControlButton() {
 }
 
 export function installControlButton() {
+  if (installed) return;
+  installed = true;
   setControlButtonUpdater(updateControlButton);
 
   const styleEl = document.createElement('style');
+  styleEl.id = 'soopAllRecordStyle';
   styleEl.textContent = `
     @keyframes soopAllRecordPulse { 0% { transform: scale(0.92); opacity: 0.8; } 50% { transform: scale(1.18); opacity: 1; box-shadow: 0 0 12px #ef4444; } 100% { transform: scale(0.92); opacity: 0.8; } }
     @keyframes soopAllRecordSpin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
@@ -300,9 +307,12 @@ export function installControlButton() {
   document.head.appendChild(styleEl);
 
   const attach = () => {
-    if (controlButton?.isConnected) return true;
     const right = document.querySelector('div.right_ctrl');
     if (!right) return false;
+    if (controlButton?.isConnected && controlButton.parentElement === right) return true;
+
+    controlObserver?.disconnect();
+    controlButton?.remove();
 
     const button = document.createElement('button');
     button.type = 'button';
@@ -351,32 +361,39 @@ export function installControlButton() {
     updateControlButton();
 
     // SOOP 플레이어가 나중에 다른 버튼들을 추가하더라도 항상 맨 앞(왼쪽) 유지
-    const ctrlObserver = new MutationObserver(() => {
+    controlObserver = new MutationObserver(() => {
+      if (!right.isConnected || document.querySelector('div.right_ctrl') !== right) {
+        attach();
+        return;
+      }
       ensureFirst();
     });
-    ctrlObserver.observe(right, { childList: true });
-
-    recalledDirectory().then(dir => {
-      if (dir && !S.rootDirectory) {
-        S.rootDirectory = dir;
-        updatePopoverContent();
-      }
-    }).catch(() => {});
-
-    setInterval(() => {
-      ensureFirst();
-      updateControlButton();
-      if (popover?.style.display === 'block') {
-        showPopover(false);
-      }
-    }, 1000);
+    controlObserver.observe(right, { childList: true });
 
     return true;
   };
 
-  if (attach()) return;
-  const observer = new MutationObserver(() => {
-    if (attach()) observer.disconnect();
+  recalledDirectory().then(dir => {
+    if (dir && !S.rootDirectory) {
+      S.rootDirectory = dir;
+      updatePopoverContent();
+    }
+  }).catch(() => {});
+
+  rootObserver = new MutationObserver(() => {
+    const right = document.querySelector('div.right_ctrl');
+    if (!controlButton?.isConnected || controlButton.parentElement !== right) {
+      attach();
+    }
   });
-  observer.observe(document.documentElement, { childList: true, subtree: true });
+  rootObserver.observe(document.documentElement, { childList: true, subtree: true });
+
+  attach();
+  updateTimer = setInterval(() => {
+    attach();
+    updateControlButton();
+    if (popover?.style.display === 'block') {
+      showPopover(false);
+    }
+  }, 1000);
 }

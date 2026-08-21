@@ -2,10 +2,10 @@
  * [4] 파일 시스템 및 Part 녹화 스트림 관리 (Disk Stream & Part Rotation)
  */
 
-import { S, iso, mb, log, snap } from '../config/state.js';
+import { S, iso, mb, log, snap, compactBuffers } from '../config/state.js';
 import { resetFragmentStats } from '../parser/fragmentTracker.js';
 import { toast, friendlyError } from '../ui/toast.js';
-import { updateControlButton, send } from './mseHook.js';
+import { updateControlButton, send, readiness } from './mseHook.js';
 
 export const kind = r => (r.mime.includes('video') ? 'video' : r.mime.includes('audio') ? 'audio' : `buffer-${r.id}`);
 export const ext = r => (r.mime.includes('mp4') ? 'mp4' : r.mime.includes('webm') ? 'webm' : 'bin');
@@ -57,6 +57,7 @@ export async function closeActiveWriters() {
       r.writable = null;
     }
   }
+  compactBuffers();
   return files;
 }
 
@@ -152,6 +153,7 @@ export async function rotatePart(reason) {
         discarded++;
       }
     }
+    compactBuffers();
 
     log('info', 'part-rotated', '새 Part로 녹화 계속', {
       reason,
@@ -235,9 +237,13 @@ export async function createSessionArtifacts() {
     parts: S.parts,
     outputs,
     diagnostics: {
+      missingConfirmedCount: S.fragmentStats.missingCount,
+      missingPendingCount: S.fragmentStats.missingPendingCount,
       missingConfirmed: [...S.fragmentStats.missing].filter(([, m]) => m.confirmed).map(([n]) => n),
       missingPending: [...S.fragmentStats.missing].filter(([, m]) => !m.confirmed).map(([n]) => n),
-      discontinuities: S.fragmentStats.discontinuities
+      discontinuityCount: S.fragmentStats.discontinuityCount,
+      discontinuities: S.fragmentStats.discontinuities,
+      untrackedGapSequences: S.fragmentStats.untrackedGapSequences
     }
   };
   await manifestWriter.write(new TextEncoder().encode(JSON.stringify(manifest, null, 2)));
@@ -306,9 +312,6 @@ export function writeFragment(r, data, info, bs) {
   if (S.pendingBytes > 536870912) {
     toast('쓰기 지연 초과로 녹화를 중지합니다.', 'error', 8000);
     stop();
-  }
-  if (S.chunks <= 10 || S.chunks % 20 === 0) {
-    send();
   }
 }
 
@@ -422,7 +425,6 @@ export async function stop() {
     S.completedAt = iso();
 
     log('info', 'stopped', '파일 쓰기 완료 및 무손실 병합 스크립트 생성', { files, merge });
-    const missing = [...S.fragmentStats.missing].filter(([, m]) => m.confirmed).length;
     toast(
       `녹화 완료 (${mb(S.bytes)} MiB, Part ${S.parts.length}개)\n${merge.scriptName} 실행 시 MP4가 생성됩니다.`,
       'ok',

@@ -2,20 +2,24 @@
  * [5] MSE (MediaSource, SourceBuffer) 후킹 엔진 (MSE Hook Engine)
  */
 
-import { page, S, log, bus, snap } from '../config/state.js';
+import { page, S, log, bus, snap, compactBuffers } from '../config/state.js';
 import { boxes, initMeta, has } from '../parser/boxParser.js';
 import { fragmentInfo, observeFragment } from '../parser/fragmentTracker.js';
 import { kind, rotatePart, writeFragment } from './diskWriter.js';
 
-export function copy(input) {
-  let src;
+export function view(input) {
   if (input instanceof page.ArrayBuffer) {
-    src = new page.Uint8Array(input);
-  } else if (page.ArrayBuffer.isView(input)) {
-    src = new page.Uint8Array(input.buffer, input.byteOffset, input.byteLength);
-  } else {
-    return null;
+    return new page.Uint8Array(input);
   }
+  if (page.ArrayBuffer.isView(input)) {
+    return new page.Uint8Array(input.buffer, input.byteOffset, input.byteLength);
+  }
+  return null;
+}
+
+export function copy(input) {
+  const src = view(input);
+  if (!src) return null;
   const dst = new page.Uint8Array(src.byteLength);
   dst.set(src);
   return dst;
@@ -46,7 +50,10 @@ export function record(sb) {
     };
     S.byObject.set(sb, r);
     S.buffers.set(r.id, r);
+  } else if (!S.buffers.has(r.id)) {
+    S.buffers.set(r.id, r);
   }
+  compactBuffers([r]);
   return r;
 }
 
@@ -114,15 +121,16 @@ export function setupMseHooks() {
 
   page.SourceBuffer.prototype.appendBuffer = function (input) {
     try {
-      const data = copy(input);
-      if (data) {
+      const inputView = view(input);
+      if (inputView) {
         const r = record(this);
-        const bs = boxes(data);
-        r.observedBytes += data.byteLength;
+        const bs = boxes(inputView);
+        r.observedBytes += inputView.byteLength;
         r.observedChunks++;
         r.lastBoxes = bs;
 
         if (has(bs, 'ftyp') && has(bs, 'moov')) {
+          const data = copy(inputView);
           const previous = r.initMeta;
           const newMeta = initMeta(data, r.mime);
           const previousActive = S.activeByKind.get(kind(r));
@@ -134,6 +142,7 @@ export function setupMseHooks() {
             .map(v => v.toString(16).padStart(2, '0'))
             .join('');
           S.activeByKind.set(kind(r), r);
+          compactBuffers([r]);
 
           log('info', 'init-cached', `Buffer ${r.id} init 캐시`, {
             bytes: data.byteLength,
@@ -164,8 +173,9 @@ export function setupMseHooks() {
             }
           }
         } else if (S.recording && (has(bs, 'moof') || has(bs, 'mdat'))) {
+          const data = copy(inputView);
           const info = fragmentInfo(data);
-          observeFragment(info, r.generation);
+          observeFragment(info, r.generation, `${kind(r)}#${r.id}`);
 
           if (S.rotating) {
             S.transitionQueue.push({ record: r, data, info, boxes: bs });

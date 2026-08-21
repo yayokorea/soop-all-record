@@ -645,11 +645,11 @@ export function dashboard(channelId) {
       missingReport.innerHTML = `
         <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
           <div style="display:flex;align-items:center;gap:10px">
-            <span style="color:var(--accent-red);font-weight:700;min-width:110px">확정 누락 번호:</span>
+            <span style="color:var(--accent-red);font-weight:700;min-width:110px">확정 누락 sequence ${f.missingCount}개 (최근):</span>
             <code>${esc(f.missingConfirmed.join(', ') || '누락 없음 (완벽 수신)')}</code>
           </div>
           <div style="display:flex;align-items:center;gap:10px">
-            <span style="color:var(--accent-orange);font-weight:700;min-width:110px">판정 대기 번호:</span>
+            <span style="color:var(--accent-orange);font-weight:700;min-width:110px">판정 대기 ${f.missingPendingCount}개 (최근):</span>
             <code>${esc(f.missingPending.join(', ') || '대기 항목 없음')}</code>
           </div>
         </div>`;
@@ -710,7 +710,7 @@ export function dashboard(channelId) {
             .map(
               x => `
           <div style="padding:12px 18px;background:rgba(255,160,0,0.15);border:1px solid var(--accent-orange);border-radius:10px;color:var(--accent-orange);font-size:13px">
-            Track ${x.trackId} · ${esc(x.type)} · seq ${x.sequence ?? '-'}
+            ${esc(x.stream || 'unknown')} · Track ${x.trackId ?? '-'} · ${esc(x.type)} · seq ${x.sequence ?? '-'}
           </div>`
             )
             .join('')
